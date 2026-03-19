@@ -1,14 +1,18 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { Mic, Zap, Radio } from "lucide-react";
+import { Mic, Zap, Radio, Volume2, VolumeX } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import { useMission } from "@/contexts/MissionContext";
 import { useDemoMode } from "@/hooks/useDemoMode";
+import { setVolume } from "@/lib/audio";
 
 export function Header() {
   const { missionStatus, demoMode, userInput, setUserInput, setDemoMode } = useMission();
   const { startDemo, stopDemo } = useDemoMode();
+  const [vol, setVol] = useState(70);
 
   const handleDemoToggle = (checked: boolean) => {
     if (checked) {
@@ -16,6 +20,17 @@ export function Header() {
     } else {
       stopDemo();
     }
+  };
+
+  const handleVolumeChange = (value: number[]) => {
+    setVol(value[0]);
+    setVolume(value[0] / 100);
+  };
+
+  const toggleMute = () => {
+    const newVol = vol === 0 ? 70 : 0;
+    setVol(newVol);
+    setVolume(newVol / 100);
   };
 
   const isLive = missionStatus === "live";
@@ -75,6 +90,25 @@ export function Header() {
         <Zap className="w-4 h-4" />
         Start Mission
       </Button>
+
+      {/* Volume Control */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          onClick={toggleMute}
+        >
+          {vol === 0 ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+        </Button>
+        <Slider
+          value={[vol]}
+          onValueChange={handleVolumeChange}
+          max={100}
+          step={1}
+          className="w-16"
+        />
+      </div>
 
       {/* Demo Toggle */}
       <div className="flex items-center gap-2 shrink-0">

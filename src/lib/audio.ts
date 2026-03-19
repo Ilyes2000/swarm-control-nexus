@@ -38,7 +38,7 @@ export function startAmbient() {
   const ctx = getCtx();
   const gain = ctx.createGain();
   gain.gain.value = 0;
-  gain.connect(ctx.destination);
+  gain.connect(getMaster());
 
   const osc1 = ctx.createOscillator();
   osc1.type = "sine";
@@ -93,7 +93,7 @@ export function playBlip() {
   osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.06);
   gain.gain.setValueAtTime(0.08, ctx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-  osc.connect(gain).connect(ctx.destination);
+  osc.connect(gain).connect(getMaster());
   osc.start();
   osc.stop(ctx.currentTime + 0.15);
 }
@@ -108,7 +108,7 @@ export function playAgentActivate() {
   osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12);
   gain.gain.setValueAtTime(0.1, ctx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
-  osc.connect(gain).connect(ctx.destination);
+  osc.connect(gain).connect(getMaster());
   osc.start();
   osc.stop(ctx.currentTime + 0.2);
 }
@@ -125,7 +125,7 @@ export function playPhoneRing() {
     gain.gain.linearRampToValueAtTime(0.07, ctx.currentTime + start + 0.02);
     gain.gain.setValueAtTime(0.07, ctx.currentTime + start + dur - 0.02);
     gain.gain.linearRampToValueAtTime(0, ctx.currentTime + start + dur);
-    osc.connect(gain).connect(ctx.destination);
+    osc.connect(gain).connect(getMaster());
     osc.start(ctx.currentTime + start);
     osc.stop(ctx.currentTime + start + dur);
   };
@@ -146,7 +146,7 @@ export function playCallConnect() {
   osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1);
   gain.gain.setValueAtTime(0.08, ctx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-  osc.connect(gain).connect(ctx.destination);
+  osc.connect(gain).connect(getMaster());
   osc.start();
   osc.stop(ctx.currentTime + 0.3);
 }
@@ -161,7 +161,7 @@ export function playCallEnd() {
   osc.frequency.exponentialRampToValueAtTime(330, ctx.currentTime + 0.25);
   gain.gain.setValueAtTime(0.07, ctx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-  osc.connect(gain).connect(ctx.destination);
+  osc.connect(gain).connect(getMaster());
   osc.start();
   osc.stop(ctx.currentTime + 0.3);
 }
@@ -176,7 +176,7 @@ export function playSMS() {
     osc.frequency.value = 1200;
     gain.gain.setValueAtTime(0.06, ctx.currentTime + offset);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.06);
-    osc.connect(gain).connect(ctx.destination);
+    osc.connect(gain).connect(getMaster());
     osc.start(ctx.currentTime + offset);
     osc.stop(ctx.currentTime + offset + 0.06);
   });
@@ -196,7 +196,7 @@ export function playMissionComplete() {
     gain.gain.linearRampToValueAtTime(0.07, start + 0.03);
     gain.gain.setValueAtTime(0.07, start + 0.3);
     gain.gain.exponentialRampToValueAtTime(0.001, start + 0.8);
-    osc.connect(gain).connect(ctx.destination);
+    osc.connect(gain).connect(getMaster());
     osc.start(start);
     osc.stop(start + 0.8);
   });
@@ -218,6 +218,6 @@ export function playTyping() {
   const filter = ctx.createBiquadFilter();
   filter.type = "highpass";
   filter.frequency.value = 2000;
-  source.connect(filter).connect(gain).connect(ctx.destination);
+  source.connect(filter).connect(gain).connect(getMaster());
   source.start();
 }
