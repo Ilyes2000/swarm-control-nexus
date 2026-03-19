@@ -1,10 +1,29 @@
 // Synthesized sound effects using Web Audio API — no external dependencies needed
 
 let audioCtx: AudioContext | null = null;
+let masterGain: GainNode | null = null;
 
 function getCtx(): AudioContext {
-  if (!audioCtx) audioCtx = new AudioContext();
+  if (!audioCtx) {
+    audioCtx = new AudioContext();
+    masterGain = audioCtx.createGain();
+    masterGain.connect(audioCtx.destination);
+  }
   return audioCtx;
+}
+
+function getMaster(): GainNode {
+  getCtx();
+  return masterGain!;
+}
+
+export function setVolume(v: number) {
+  const gain = getMaster();
+  gain.gain.setValueAtTime(Math.max(0, Math.min(1, v)), getCtx().currentTime);
+}
+
+export function getVolume(): number {
+  return masterGain?.gain.value ?? 0.7;
 }
 
 export function resumeAudio() {
