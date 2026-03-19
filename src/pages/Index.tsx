@@ -1,16 +1,40 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { MissionProvider } from "@/contexts/MissionContext";
+import { Header } from "@/components/dashboard/Header";
+import { AgentPanel } from "@/components/dashboard/AgentPanel";
+import { MissionTimeline } from "@/components/dashboard/MissionTimeline";
+import { CommPanel } from "@/components/dashboard/CommPanel";
+import { MissionSummary } from "@/components/dashboard/MissionSummary";
 
-// IMPORTANT: Fully REPLACE this with your own code
-const PlaceholderIndex = () => {
-  // PLACEHOLDER: Replace this entire return statement with the user's app.
-  // The inline background color is intentionally not part of the design system.
+const Index = () => {
   return (
-    <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: '#fcfbf8' }}>
-      <img data-lovable-blank-page-placeholder="REMOVE_THIS" src="/placeholder.svg" alt="Your app will live here!" />
-    </div>
+    <MissionProvider>
+      <div className="h-screen flex flex-col bg-background overflow-hidden">
+        <Header />
+
+        <div className="flex-1 grid grid-cols-[280px_1fr_280px] gap-3 p-3 min-h-0">
+          {/* Left — Agent Swarm */}
+          <div className="glass-panel p-3 overflow-hidden">
+            <AgentPanel />
+          </div>
+
+          {/* Center — Timeline */}
+          <div className="glass-panel p-4 overflow-hidden">
+            <MissionTimeline />
+          </div>
+
+          {/* Right — Comms */}
+          <div className="glass-panel p-3 overflow-hidden">
+            <CommPanel />
+          </div>
+        </div>
+
+        {/* Bottom — Mission Summary */}
+        <div className="px-3 pb-3">
+          <MissionSummary />
+        </div>
+      </div>
+    </MissionProvider>
   );
 };
-
-const Index = PlaceholderIndex;
 
 export default Index;
