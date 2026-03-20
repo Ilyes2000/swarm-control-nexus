@@ -1,6 +1,13 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from "react";
 
-export type AgentStatus = "idle" | "thinking" | "speaking" | "calling";
+export type AgentStatus = "idle" | "thinking" | "speaking" | "calling" | "listening" | "retrying";
+
+export interface AgentPersonality {
+  color: string; // tailwind color token
+  trait: string;
+  tone: string;
+  riskTolerance: "low" | "medium" | "high";
+}
 
 export interface Agent {
   id: string;
@@ -9,6 +16,18 @@ export interface Agent {
   status: AgentStatus;
   currentTask: string;
   liveText: string;
+  confidence: number; // 0-100
+  personality: AgentPersonality;
+  listeningTo: string | null; // id of agent being listened to
+}
+
+export interface MemoryEntry {
+  id: string;
+  agentId: string;
+  type: "preference" | "context" | "decision";
+  label: string;
+  value: string;
+  timestamp: string;
 }
 
 export interface TimelineEntry {
@@ -18,7 +37,8 @@ export interface TimelineEntry {
   agentEmoji: string;
   agentName: string;
   description: string;
-  status: "success" | "pending" | "failed";
+  status: "success" | "pending" | "failed" | "retrying" | "fallback";
+  retryCount?: number;
 }
 
 export interface CallState {
@@ -38,11 +58,20 @@ export interface SMSMessage {
   direction: "sent" | "received";
 }
 
+export interface OptimizationData {
+  originalCost: string;
+  optimizedCost: string;
+  savedAmount: string;
+  savedPercent: string;
+  tradeoffs: { label: string; original: string; optimized: string }[];
+}
+
 export interface MissionSummary {
   visible: boolean;
   result: string;
   costBreakdown: { label: string; amount: string }[];
   timeTaken: string;
+  optimization?: OptimizationData;
 }
 
 export interface ReasoningEntry {
@@ -52,7 +81,7 @@ export interface ReasoningEntry {
   agentName: string;
   decision: string;
   reasoning: string;
-  confidence: number; // 0-100
+  confidence: number;
   alternatives: string[];
   timestamp: string;
 }
@@ -65,6 +94,7 @@ interface MissionState {
   smsLog: SMSMessage[];
   summary: MissionSummary;
   reasoning: ReasoningEntry[];
+  memory: MemoryEntry[];
   demoMode: boolean;
   userInput: string;
 }
@@ -73,39 +103,37 @@ interface MissionContextType extends MissionState {
   setMissionStatus: (s: MissionState["missionStatus"]) => void;
   updateAgent: (id: string, updates: Partial<Agent>) => void;
   addTimelineEntry: (entry: TimelineEntry) => void;
+  updateTimelineEntry: (id: string, updates: Partial<TimelineEntry>) => void;
   setCall: (call: CallState) => void;
   addCallTranscript: (speaker: string, text: string) => void;
   addSMS: (msg: SMSMessage) => void;
   setSummary: (s: MissionSummary) => void;
   addReasoning: (entry: ReasoningEntry) => void;
+  addMemory: (entry: MemoryEntry) => void;
   setDemoMode: (on: boolean) => void;
   setUserInput: (input: string) => void;
   resetMission: () => void;
 }
 
+const personalities: Record<string, AgentPersonality> = {
+  planner: { color: "purple", trait: "Strategic & Methodical", tone: "Authoritative", riskTolerance: "low" },
+  call: { color: "green", trait: "Charming & Persuasive", tone: "Warm & Professional", riskTolerance: "medium" },
+  negotiation: { color: "amber", trait: "Aggressive & Analytical", tone: "Sharp & Direct", riskTolerance: "high" },
+  scheduler: { color: "blue", trait: "Precise & Efficient", tone: "Calm & Organized", riskTolerance: "low" },
+  research: { color: "cyan", trait: "Curious & Thorough", tone: "Informative", riskTolerance: "medium" },
+};
+
 const defaultAgents: Agent[] = [
-  { id: "planner", name: "Planner Agent", emoji: "🧠", status: "idle", currentTask: "", liveText: "" },
-  { id: "call", name: "Call Agent", emoji: "📞", status: "idle", currentTask: "", liveText: "" },
-  { id: "negotiation", name: "Negotiation Agent", emoji: "💰", status: "idle", currentTask: "", liveText: "" },
-  { id: "scheduler", name: "Scheduler Agent", emoji: "📅", status: "idle", currentTask: "", liveText: "" },
-  { id: "research", name: "Research Agent", emoji: "🔍", status: "idle", currentTask: "", liveText: "" },
+  { id: "planner", name: "Planner Agent", emoji: "🧠", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.planner, listeningTo: null },
+  { id: "call", name: "Call Agent", emoji: "📞", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.call, listeningTo: null },
+  { id: "negotiation", name: "Negotiation Agent", emoji: "💰", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.negotiation, listeningTo: null },
+  { id: "scheduler", name: "Scheduler Agent", emoji: "📅", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.scheduler, listeningTo: null },
+  { id: "research", name: "Research Agent", emoji: "🔍", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.research, listeningTo: null },
 ];
 
-const defaultCall: CallState = {
-  active: false,
-  caller: "",
-  receiver: "",
-  duration: 0,
-  transcript: [],
-  status: "ended",
-};
+const defaultCall: CallState = { active: false, caller: "", receiver: "", duration: 0, transcript: [], status: "ended" };
 
-const defaultSummary: MissionSummary = {
-  visible: false,
-  result: "",
-  costBreakdown: [],
-  timeTaken: "",
-};
+const defaultSummary: MissionSummary = { visible: false, result: "", costBreakdown: [], timeTaken: "" };
 
 const initialState: MissionState = {
   missionStatus: "idle",
@@ -115,6 +143,7 @@ const initialState: MissionState = {
   smsLog: [],
   summary: defaultSummary,
   reasoning: [],
+  memory: [],
   demoMode: false,
   userInput: "",
 };
@@ -137,6 +166,13 @@ export function MissionProvider({ children }: { children: ReactNode }) {
 
   const addTimelineEntry = useCallback((entry: TimelineEntry) => {
     setState((s) => ({ ...s, timeline: [...s.timeline, entry] }));
+  }, []);
+
+  const updateTimelineEntry = useCallback((id: string, updates: Partial<TimelineEntry>) => {
+    setState((s) => ({
+      ...s,
+      timeline: s.timeline.map((t) => (t.id === id ? { ...t, ...updates } : t)),
+    }));
   }, []);
 
   const setCall = useCallback((call: CallState) => {
@@ -162,6 +198,10 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, reasoning: [...s.reasoning, entry] }));
   }, []);
 
+  const addMemory = useCallback((entry: MemoryEntry) => {
+    setState((s) => ({ ...s, memory: [...s.memory, entry] }));
+  }, []);
+
   const setDemoMode = useCallback((demoMode: boolean) => {
     setState((s) => ({ ...s, demoMode }));
   }, []);
@@ -177,18 +217,9 @@ export function MissionProvider({ children }: { children: ReactNode }) {
   return (
     <MissionContext.Provider
       value={{
-        ...state,
-        setMissionStatus,
-        updateAgent,
-        addTimelineEntry,
-        setCall,
-        addCallTranscript,
-        addSMS,
-        setSummary,
-        addReasoning,
-        setDemoMode,
-        setUserInput,
-        resetMission,
+        ...state, setMissionStatus, updateAgent, addTimelineEntry, updateTimelineEntry,
+        setCall, addCallTranscript, addSMS, setSummary, addReasoning, addMemory,
+        setDemoMode, setUserInput, resetMission,
       }}
     >
       {children}
