@@ -10,6 +10,7 @@ import { ExplainabilityPanel } from "@/components/dashboard/ExplainabilityPanel"
 import { MemoryPanel } from "@/components/dashboard/MemoryPanel";
 import { MissionSummary } from "@/components/dashboard/MissionSummary";
 import { SkillLibrary } from "@/components/dashboard/SkillLibrary";
+import { AgentNetworkGraph } from "@/components/dashboard/AgentNetworkGraph";
 
 interface MissionTab {
   id: string;
@@ -23,10 +24,15 @@ function MissionDashboard() {
     <div className="flex-1 flex flex-col min-h-0">
       <Header />
 
-      <div className="flex-1 grid grid-cols-[220px_1fr_240px] gap-2 p-2 min-h-0">
-        {/* Left — Agent Swarm */}
-        <div className="glass-panel p-2.5 overflow-hidden">
-          <AgentPanel />
+      <div className="flex-1 grid grid-cols-[220px_1fr_260px] gap-2 p-2 min-h-0">
+        {/* Left — Agent Swarm + 3D Network */}
+        <div className="flex flex-col gap-2 min-h-0">
+          <div className="glass-panel p-2.5 overflow-hidden flex-1">
+            <AgentPanel />
+          </div>
+          <div className="glass-panel p-1 overflow-hidden h-[220px]">
+            <AgentNetworkGraph />
+          </div>
         </div>
 
         {/* Center — Timeline */}
