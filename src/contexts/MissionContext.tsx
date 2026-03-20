@@ -169,6 +169,9 @@ const initialState: MissionState = {
   summary: defaultSummary,
   reasoning: [],
   memory: [],
+  skills: [],
+  adaptations: [],
+  trainingMode: false,
   demoMode: false,
   userInput: "",
 };
