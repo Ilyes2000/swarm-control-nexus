@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:backend": "npm --prefix ./clawswarm-backend run dev",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
+    "test:backend": "npm --prefix ./clawswarm-backend test",
     "test": "vitest run",
     "test:watch": "vitest"
   },

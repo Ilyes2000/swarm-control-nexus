@@ -134,7 +134,7 @@ function NetworkScene() {
     const links = new Set<string>();
     agents.forEach((agent) => {
       if (agent.listeningTo) {
-        const src = agents.find((a) => a.name === agent.listeningTo);
+        const src = agents.find((a) => a.id === agent.listeningTo);
         if (src) links.add(`${src.id}-${agent.id}`);
       }
       if (agent.status !== "idle") {

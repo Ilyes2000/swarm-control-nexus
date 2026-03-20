@@ -25,12 +25,10 @@ function Waveform({ color }: { color: string }) {
   );
 }
 
-function ConfidenceMini({ value, color }: { value: number; color: string }) {
+function ConfidenceMini({ value }: { value: number }) {
   if (value === 0) return null;
   const colorClass = value >= 85 ? "text-success" : value >= 60 ? "text-warning" : "text-destructive";
-  return (
-    <span className={`text-[9px] font-mono font-bold ${colorClass}`}>{value}%</span>
-  );
+  return <span className={`text-[9px] font-mono font-bold ${colorClass}`}>{value}%</span>;
 }
 
 const statusConfig: Record<AgentStatus, { label: string; base: string }> = {
@@ -42,7 +40,7 @@ const statusConfig: Record<AgentStatus, { label: string; base: string }> = {
   retrying: { label: "retrying", base: "bg-destructive/15 text-destructive border-destructive/30" },
 };
 
-export function AgentCard({ agent }: { agent: Agent }) {
+export function AgentCard({ agent, listeningToLabel }: { agent: Agent; listeningToLabel: string | null }) {
   const isActive = agent.status !== "idle";
   const colors = personalityColors[agent.personality.color] || personalityColors.purple;
 
@@ -55,7 +53,6 @@ export function AgentCard({ agent }: { agent: Agent }) {
       animate={isActive ? { scale: [1, 1.008, 1] } : {}}
       transition={{ duration: 2.5, repeat: Infinity }}
     >
-      {/* Header row */}
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-base">{agent.emoji}</span>
@@ -65,36 +62,28 @@ export function AgentCard({ agent }: { agent: Agent }) {
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <ConfidenceMini value={agent.confidence} color={agent.personality.color} />
-          {(agent.status === "speaking" || agent.status === "calling") && (
-            <Waveform color={agent.personality.color} />
-          )}
+          <ConfidenceMini value={agent.confidence} />
+          {(agent.status === "speaking" || agent.status === "calling") && <Waveform color={agent.personality.color} />}
           <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-mono font-medium border ${statusConfig[agent.status].base}`}>
             {statusConfig[agent.status].label}
           </span>
         </div>
       </div>
 
-      {/* Listening indicator */}
       {agent.listeningTo && (
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className="text-[9px] text-secondary font-mono mb-1 flex items-center gap-1"
         >
-          <motion.span
-            animate={{ opacity: [1, 0.3, 1] }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-          >👂</motion.span>
-          Listening to {agent.listeningTo}
+          <motion.span animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
+            ear
+          </motion.span>
+          Listening to {listeningToLabel ?? agent.listeningTo}
         </motion.p>
       )}
 
-      {agent.currentTask && (
-        <p className="text-[9px] text-muted-foreground font-mono mb-1 truncate">
-          📌 {agent.currentTask}
-        </p>
-      )}
+      {agent.currentTask && <p className="text-[9px] text-muted-foreground font-mono mb-1 truncate">Task: {agent.currentTask}</p>}
 
       {agent.liveText && (
         <motion.div
@@ -106,17 +95,20 @@ export function AgentCard({ agent }: { agent: Agent }) {
         </motion.div>
       )}
 
-      {/* Risk badge */}
       {isActive && (
         <div className="flex items-center gap-1 mt-1.5">
           <span className={`text-[8px] font-mono px-1 py-0.5 rounded ${colors.badge}`}>
             {agent.personality.tone}
           </span>
-          <span className={`text-[8px] font-mono px-1 py-0.5 rounded ${
-            agent.personality.riskTolerance === "high" ? "bg-destructive/15 text-destructive" :
-            agent.personality.riskTolerance === "medium" ? "bg-warning/15 text-warning" :
-            "bg-success/15 text-success"
-          }`}>
+          <span
+            className={`text-[8px] font-mono px-1 py-0.5 rounded ${
+              agent.personality.riskTolerance === "high"
+                ? "bg-destructive/15 text-destructive"
+                : agent.personality.riskTolerance === "medium"
+                  ? "bg-warning/15 text-warning"
+                  : "bg-success/15 text-success"
+            }`}
+          >
             Risk: {agent.personality.riskTolerance}
           </span>
         </div>

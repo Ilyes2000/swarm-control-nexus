@@ -1,0 +1,724 @@
+import { createInitialMissionState, cloneState } from "./state.js";
+import { createEvent } from "./protocol.js";
+import { createLlmGateway } from "./integrations/llm.js";
+import { createTelnyxSmsClient } from "./integrations/telnyx-sms.js";
+import { createResembleClient } from "./integrations/resemble.js";
+import { createClawdtalkClient } from "./integrations/clawdtalk.js";
+import { runPlannerAgent } from "./agents/planner.js";
+import { runResearchAgent } from "./agents/research.js";
+import { runCallerAgent } from "./agents/caller.js";
+import { runNegotiatorAgent } from "./agents/negotiator.js";
+import { runSchedulerAgent } from "./agents/scheduler.js";
+
+function createAbortError() {
+  return new Error("Mission run aborted");
+}
+
+function nowLabel() {
+  return new Date().toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+export class MissionOrchestrator {
+  constructor({ config, emitEvent }) {
+    this.config = config;
+    this.emitEvent = emitEvent;
+    this.llm = createLlmGateway(config);
+    this.smsClient = createTelnyxSmsClient(config);
+    this.resembleClient = createResembleClient(config);
+    this.clawdtalkClient = createClawdtalkClient(config);
+    this.state = createInitialMissionState();
+    this.sequenceNumber = 0;
+    this.currentRunId = 0;
+    this.currentController = null;
+    this.currentRunPromise = null;
+  }
+
+  getState() {
+    return cloneState(this.state);
+  }
+
+  waitForCurrentRun() {
+    return this.currentRunPromise ?? Promise.resolve();
+  }
+
+  broadcast(type, payload) {
+    this.emitEvent(createEvent(type, payload));
+  }
+
+  broadcastSnapshot() {
+    this.broadcast("snapshot", this.getState());
+  }
+
+  setMissionStatus(status, mode) {
+    this.state.missionStatus = status;
+    if (mode) {
+      this.state.demoMode = mode === "simulation";
+    }
+    this.broadcast("mission_status", { status, mode });
+  }
+
+  updateAgent(id, updates) {
+    this.state.agents = this.state.agents.map((agent) => (agent.id === id ? { ...agent, ...updates } : agent));
+    this.broadcast("agent_update", { id, updates });
+  }
+
+  addTimelineEntry(entry) {
+    this.state.timeline.push(entry);
+    this.broadcast("timeline_entry", entry);
+  }
+
+  updateTimelineEntry(id, updates) {
+    this.state.timeline = this.state.timeline.map((entry) => (entry.id === id ? { ...entry, ...updates } : entry));
+    this.broadcast("timeline_update", { id, updates });
+  }
+
+  setCall(call) {
+    this.state.call = call;
+    this.broadcast("call_update", call);
+  }
+
+  addCallTranscript(speaker, text) {
+    this.state.call = {
+      ...this.state.call,
+      transcript: [...this.state.call.transcript, { speaker, text }]
+    };
+    this.broadcast("call_transcript", { speaker, text });
+  }
+
+  addSms(message) {
+    this.state.smsLog.push(message);
+    this.broadcast("sms", message);
+  }
+
+  setSummary(summary) {
+    this.state.summary = summary;
+    this.broadcast("summary", summary);
+  }
+
+  addReasoning(entry) {
+    this.state.reasoning.push(entry);
+    this.broadcast("reasoning", entry);
+  }
+
+  addMemory(entry) {
+    this.state.memory.push(entry);
+    this.broadcast("memory", entry);
+  }
+
+  addSkill(skill) {
+    this.state.skills.push(skill);
+    this.broadcast("skill", skill);
+  }
+
+  addAdaptation(event) {
+    this.state.adaptations.push(event);
+    this.broadcast("adaptation", event);
+  }
+
+  setTrainingMode(enabled) {
+    this.state.trainingMode = enabled;
+    this.broadcast("training_mode", { enabled });
+  }
+
+  nextId(prefix) {
+    this.sequenceNumber += 1;
+    return `${prefix}-${this.sequenceNumber}`;
+  }
+
+  ensureActiveRun(signal) {
+    if (signal.aborted) {
+      throw createAbortError();
+    }
+  }
+
+  async waitStep(signal, multiplier = 1) {
+    const duration = Math.max(0, this.config.simulationDelayMs * multiplier);
+    if (duration === 0) {
+      this.ensureActiveRun(signal);
+      return;
+    }
+
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        signal.removeEventListener("abort", onAbort);
+        resolve();
+      }, duration);
+
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(createAbortError());
+      };
+
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  resetMission({ broadcast = true } = {}) {
+    if (this.currentController) {
+      this.currentController.abort();
+    }
+
+    this.state = createInitialMissionState();
+    this.currentController = null;
+    this.currentRunPromise = null;
+
+    if (broadcast) {
+      this.broadcastSnapshot();
+      this.setMissionStatus("idle", "live");
+    }
+  }
+
+  async startMission({ missionText, mode = "live" }) {
+    if (!missionText?.trim()) {
+      throw new Error("missionText is required");
+    }
+
+    this.resetMission({ broadcast: false });
+    this.currentRunId += 1;
+    this.currentController = new AbortController();
+    const signal = this.currentController.signal;
+    const runId = this.currentRunId;
+
+    this.state.userInput = missionText.trim();
+    this.state.demoMode = mode === "simulation";
+    this.broadcastSnapshot();
+    this.setMissionStatus("live", mode);
+
+    this.currentRunPromise = this.runMission({ missionText: missionText.trim(), mode, signal })
+      .catch((error) => {
+        if (signal.aborted) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : "Mission failed";
+        this.broadcast("error", { message });
+        this.addTimelineEntry({
+          id: this.nextId("timeline"),
+          timestamp: nowLabel(),
+          agentId: "planner",
+          agentEmoji: "⚠️",
+          agentName: "System",
+          description: `Mission failed: ${message}`,
+          status: "failed"
+        });
+        this.setMissionStatus("completed", mode);
+      })
+      .finally(() => {
+        if (this.currentRunId === runId) {
+          this.currentController = null;
+        }
+      });
+
+    return { ok: true, mode };
+  }
+
+  async interruptMission({ command }) {
+    if (!this.currentController || this.state.missionStatus !== "live") {
+      throw new Error("No live mission to interrupt");
+    }
+
+    const mode = this.state.demoMode ? "simulation" : "live";
+    this.currentController.abort();
+    this.currentRunId += 1;
+    this.currentController = new AbortController();
+    const runId = this.currentRunId;
+    const signal = this.currentController.signal;
+
+    this.currentRunPromise = this.runInterrupt({ command, mode, signal }).finally(() => {
+      if (this.currentRunId === runId) {
+        this.currentController = null;
+      }
+    });
+
+    return { ok: true };
+  }
+
+  async handleInboundSms(message) {
+    const sms = {
+      id: this.nextId("sms"),
+      from: message.from || "User",
+      text: message.text,
+      timestamp: nowLabel(),
+      direction: "received"
+    };
+
+    this.addSms(sms);
+
+    if (message.command === "CONFIRM") {
+      this.addTimelineEntry({
+        id: this.nextId("timeline"),
+        timestamp: nowLabel(),
+        agentId: "scheduler",
+        agentEmoji: "✅",
+        agentName: "User",
+        description: "User confirmed the itinerary by SMS.",
+        status: "success"
+      });
+    }
+
+    if (message.command === "MODIFY") {
+      this.addTimelineEntry({
+        id: this.nextId("timeline"),
+        timestamp: nowLabel(),
+        agentId: "planner",
+        agentEmoji: "📝",
+        agentName: "User",
+        description: "User requested itinerary modifications by SMS.",
+        status: "pending"
+      });
+    }
+  }
+
+  async sendUserSms(text) {
+    const sms = {
+      id: this.nextId("sms"),
+      from: "ClawSwarm",
+      text,
+      timestamp: nowLabel(),
+      direction: "sent"
+    };
+
+    this.addSms(sms);
+    await this.smsClient.sendMessage({
+      to: this.config.userPhoneNumber,
+      text
+    });
+  }
+
+  async runMission({ missionText, mode, signal }) {
+    this.addMemory({
+      id: this.nextId("memory"),
+      agentId: "planner",
+      type: "preference",
+      label: "Mission request",
+      value: missionText,
+      timestamp: "captured"
+    });
+
+    this.updateAgent("planner", {
+      status: "thinking",
+      currentTask: "Decomposing mission",
+      liveText: "Analyzing mission requirements.",
+      confidence: 75
+    });
+    const plannerTimelineId = this.nextId("timeline");
+    this.addTimelineEntry({
+      id: plannerTimelineId,
+      timestamp: nowLabel(),
+      agentId: "planner",
+      agentEmoji: "🧠",
+      agentName: "Planner Agent",
+      description: `Analyzing mission: ${missionText}`,
+      status: "pending"
+    });
+    await this.waitStep(signal, 1);
+
+    const plannerResult = await runPlannerAgent({ missionText, llm: this.llm });
+    this.updateAgent("planner", {
+      status: "speaking",
+      currentTask: "Broadcasting plan",
+      liveText: plannerResult.liveText,
+      confidence: plannerResult.confidence
+    });
+    this.updateTimelineEntry(plannerTimelineId, { status: "success" });
+    this.addReasoning({
+      id: this.nextId("reasoning"),
+      agentId: "planner",
+      agentEmoji: "🧠",
+      agentName: "Planner Agent",
+      decision: "Mission decomposed into research, calls, optimization, and scheduling.",
+      reasoning: plannerResult.reasoning,
+      confidence: plannerResult.confidence,
+      alternatives: ["Keep the mission manual", "Research only and stop before bookings"],
+      timestamp: nowLabel()
+    });
+    await this.waitStep(signal, 1);
+
+    this.updateAgent("planner", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+    this.updateAgent("research", {
+      status: "listening",
+      listeningTo: "planner",
+      currentTask: "Receiving plan",
+      liveText: "",
+      confidence: 0
+    });
+    await this.waitStep(signal, 0.5);
+
+    this.updateAgent("research", {
+      status: "thinking",
+      listeningTo: null,
+      currentTask: "Finding dinner and movie options",
+      liveText: "Scanning trusted venue options.",
+      confidence: 61
+    });
+    const researchTimelineId = this.nextId("timeline");
+    this.addTimelineEntry({
+      id: researchTimelineId,
+      timestamp: nowLabel(),
+      agentId: "research",
+      agentEmoji: "🔍",
+      agentName: "Research Agent",
+      description: "Searching restaurants and cinema listings.",
+      status: "pending"
+    });
+    await this.waitStep(signal, 1);
+
+    const researchResult = await runResearchAgent({ missionText, llm: this.llm });
+    if (researchResult.usedFallback) {
+      this.addAdaptation({
+        id: this.nextId("adaptation"),
+        message: "Fallback venue data activated for deterministic demo reliability.",
+        timestamp: nowLabel(),
+        type: "learning"
+      });
+      this.addSkill({
+        id: this.nextId("skill"),
+        title: "Seeded venue fallback",
+        description: "Use deterministic venue fixtures whenever live lookup is unavailable.",
+        source: "Research fallback",
+        version: 1,
+        usageCount: 1,
+        createdAt: nowLabel(),
+        agentId: "research"
+      });
+    }
+    this.updateAgent("research", {
+      status: "speaking",
+      liveText: researchResult.liveText,
+      confidence: researchResult.confidence
+    });
+    this.updateTimelineEntry(researchTimelineId, { status: "success" });
+    this.addReasoning({
+      id: this.nextId("reasoning"),
+      agentId: "research",
+      agentEmoji: "🔍",
+      agentName: "Research Agent",
+      decision: `Selected ${researchResult.restaurant.name} and ${researchResult.cinema.name}.`,
+      reasoning: researchResult.reasoning,
+      confidence: researchResult.confidence,
+      alternatives: ["Shift to a later movie", "Choose a cheaper but lower-rated restaurant"],
+      timestamp: nowLabel()
+    });
+    this.addMemory({
+      id: this.nextId("memory"),
+      agentId: "research",
+      type: "context",
+      label: "Research shortlist",
+      value: `${researchResult.restaurant.name} at ${researchResult.restaurant.reservationTime}; ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}`,
+      timestamp: nowLabel()
+    });
+    await this.waitStep(signal, 1);
+
+    this.updateAgent("research", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+    this.updateAgent("call", {
+      status: "listening",
+      listeningTo: "research",
+      currentTask: "Receiving venue shortlist",
+      liveText: "",
+      confidence: 0
+    });
+    await this.waitStep(signal, 0.5);
+
+    await this.handleCallSequence({
+      signal,
+      mode,
+      targetName: researchResult.restaurant.name,
+      targetPhone: researchResult.restaurant.phone,
+      reservationLine: `Hi, I need a dinner reservation for two at ${researchResult.restaurant.reservationTime}.`,
+      description: `Calling ${researchResult.restaurant.name} for a reservation`,
+      successDescription: `Dinner booked at ${researchResult.restaurant.name} for ${researchResult.restaurant.reservationTime}`,
+      memoryLabel: "Dinner booking",
+      memoryValue: `${researchResult.restaurant.name} confirmed for ${researchResult.restaurant.reservationTime}`
+    });
+
+    await this.sendUserSms(`Booked dinner at ${researchResult.restaurant.name} for ${researchResult.restaurant.reservationTime}. Calling the cinema next.`);
+
+    await this.handleCallSequence({
+      signal,
+      mode,
+      targetName: researchResult.cinema.name,
+      targetPhone: researchResult.cinema.phone,
+      reservationLine: `Hello, I want two ${researchResult.cinema.seatType} seats for ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}.`,
+      description: `Calling ${researchResult.cinema.name} for movie seats`,
+      successDescription: `Movie seats secured for ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}`,
+      memoryLabel: "Movie booking",
+      memoryValue: `${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime} with ${researchResult.cinema.seatType} seats`
+    });
+
+    this.updateAgent("negotiation", {
+      status: "listening",
+      listeningTo: "call",
+      currentTask: "Reviewing booking costs",
+      liveText: "",
+      confidence: 0
+    });
+    await this.waitStep(signal, 0.5);
+
+    this.updateAgent("negotiation", {
+      status: "thinking",
+      listeningTo: null,
+      currentTask: "Optimizing total cost",
+      liveText: "Checking stackable offers and discounts.",
+      confidence: 74
+    });
+    const negotiationTimelineId = this.nextId("timeline");
+    this.addTimelineEntry({
+      id: negotiationTimelineId,
+      timestamp: nowLabel(),
+      agentId: "negotiation",
+      agentEmoji: "💰",
+      agentName: "Negotiation Agent",
+      description: "Comparing available discounts.",
+      status: "pending"
+    });
+    await this.waitStep(signal, 1);
+
+    const negotiationResult = await runNegotiatorAgent({ researchResult, llm: this.llm });
+    this.updateAgent("negotiation", {
+      status: "speaking",
+      liveText: negotiationResult.liveText,
+      confidence: negotiationResult.confidence
+    });
+    this.updateTimelineEntry(negotiationTimelineId, { status: "success" });
+    this.addReasoning({
+      id: this.nextId("reasoning"),
+      agentId: "negotiation",
+      agentEmoji: "💰",
+      agentName: "Negotiation Agent",
+      decision: "Applied the best available dinner and cinema discounts.",
+      reasoning: negotiationResult.reasoning,
+      confidence: negotiationResult.confidence,
+      alternatives: ["Keep full-price booking", "Move to a cheaper but worse-timed show"],
+      timestamp: nowLabel()
+    });
+    await this.waitStep(signal, 1);
+
+    this.updateAgent("negotiation", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+    this.updateAgent("scheduler", {
+      status: "listening",
+      listeningTo: "negotiation",
+      currentTask: "Preparing final itinerary",
+      liveText: "",
+      confidence: 0
+    });
+    await this.waitStep(signal, 0.5);
+
+    this.updateAgent("scheduler", {
+      status: "thinking",
+      listeningTo: null,
+      currentTask: "Building itinerary",
+      liveText: "Sequencing dinner, transit, and showtime.",
+      confidence: 82
+    });
+    const schedulerTimelineId = this.nextId("timeline");
+    this.addTimelineEntry({
+      id: schedulerTimelineId,
+      timestamp: nowLabel(),
+      agentId: "scheduler",
+      agentEmoji: "📅",
+      agentName: "Scheduler Agent",
+      description: "Building final itinerary.",
+      status: "pending"
+    });
+    await this.waitStep(signal, 1);
+
+    const schedulerResult = await runSchedulerAgent({
+      researchResult,
+      negotiationResult,
+      llm: this.llm
+    });
+    this.updateAgent("scheduler", {
+      status: "speaking",
+      liveText: schedulerResult.liveText,
+      confidence: schedulerResult.confidence
+    });
+    this.updateTimelineEntry(schedulerTimelineId, { status: "success" });
+    this.addReasoning({
+      id: this.nextId("reasoning"),
+      agentId: "scheduler",
+      agentEmoji: "📅",
+      agentName: "Scheduler Agent",
+      decision: "Final itinerary aligned dinner timing with the best movie slot.",
+      reasoning: "The dinner ends with a comfortable travel buffer before the selected showtime, preserving seat quality and discount coverage.",
+      confidence: schedulerResult.confidence,
+      alternatives: ["Later dinner and later show", "Movie first, dinner second"],
+      timestamp: nowLabel()
+    });
+    this.setSummary(schedulerResult.summary);
+    this.addTimelineEntry({
+      id: this.nextId("timeline"),
+      timestamp: nowLabel(),
+      agentId: "planner",
+      agentEmoji: "✅",
+      agentName: "Planner Agent",
+      description: "Mission completed successfully.",
+      status: "success"
+    });
+    await this.sendUserSms(`Mission complete. Dinner at ${researchResult.restaurant.name} ${researchResult.restaurant.reservationTime}, then ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}. Reply CONFIRM or MODIFY.`);
+
+    this.addAdaptation({
+      id: this.nextId("adaptation"),
+      message: "Mission finished. Training mode is evaluating the execution trace.",
+      timestamp: nowLabel(),
+      type: "improving"
+    });
+    this.setTrainingMode(true);
+    await this.waitStep(signal, 0.5);
+    this.setTrainingMode(false);
+    this.updateAgent("scheduler", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+    this.setMissionStatus("completed", mode);
+  }
+
+  async handleCallSequence({
+    signal,
+    mode,
+    targetName,
+    targetPhone,
+    reservationLine,
+    description,
+    successDescription,
+    memoryLabel,
+    memoryValue
+  }) {
+    this.updateAgent("call", {
+      status: "calling",
+      listeningTo: null,
+      currentTask: description,
+      liveText: `Dialing ${targetName}.`,
+      confidence: 79
+    });
+    const timelineId = this.nextId("timeline");
+    this.addTimelineEntry({
+      id: timelineId,
+      timestamp: nowLabel(),
+      agentId: "call",
+      agentEmoji: "📞",
+      agentName: "Call Agent",
+      description,
+      status: "pending"
+    });
+
+    this.setCall({
+      active: true,
+      caller: "Call Agent",
+      receiver: targetName,
+      duration: 0,
+      transcript: [],
+      status: "ringing"
+    });
+    await this.waitStep(signal, 1);
+
+    const callResult = await runCallerAgent({
+      businessName: targetName,
+      businessPhone: targetPhone,
+      reservationLine,
+      mode,
+      clawdtalk: this.clawdtalkClient,
+      resemble: this.resembleClient,
+      missionVoiceName: this.config.missionVoiceName
+    });
+
+    this.setCall({
+      active: true,
+      caller: "Call Agent",
+      receiver: targetName,
+      duration: 3,
+      transcript: [],
+      status: "connected"
+    });
+    this.updateAgent("call", {
+      status: "speaking",
+      currentTask: description,
+      liveText: `Connected to ${targetName}.`,
+      confidence: 87
+    });
+
+    for (const [index, line] of callResult.transcript.entries()) {
+      await this.waitStep(signal, 0.5);
+      this.addCallTranscript(line.speaker, line.text);
+      this.setCall({
+        ...this.state.call,
+        active: true,
+        caller: "Call Agent",
+        receiver: targetName,
+        duration: 4 + index,
+        status: "connected"
+      });
+    }
+
+    this.setCall({
+      active: true,
+      caller: "Call Agent",
+      receiver: targetName,
+      duration: callResult.transcript.length + 4,
+      transcript: [],
+      status: "ended"
+    });
+    this.updateAgent("call", {
+      status: "idle",
+      currentTask: "",
+      liveText: "",
+      confidence: 0
+    });
+    this.updateTimelineEntry(timelineId, { status: "success", description: successDescription });
+    this.addMemory({
+      id: this.nextId("memory"),
+      agentId: "call",
+      type: "decision",
+      label: memoryLabel,
+      value: memoryValue,
+      timestamp: nowLabel()
+    });
+  }
+
+  async runInterrupt({ command, mode, signal }) {
+    this.addTimelineEntry({
+      id: this.nextId("timeline"),
+      timestamp: nowLabel(),
+      agentId: "planner",
+      agentEmoji: "⚡",
+      agentName: "User Interrupt",
+      description: command,
+      status: "pending"
+    });
+    this.updateAgent("planner", {
+      status: "thinking",
+      currentTask: "Re-planning mission",
+      liveText: `Processing interrupt: "${command}"`,
+      confidence: 82
+    });
+    await this.waitStep(signal, 1);
+
+    this.addReasoning({
+      id: this.nextId("reasoning"),
+      agentId: "planner",
+      agentEmoji: "🧠",
+      agentName: "Planner Agent",
+      decision: "Accepted the user interrupt and rebuilt the remaining mission.",
+      reasoning: "The user override takes precedence over the prior optimization path, so the fastest safe response is to re-plan the remaining booking steps.",
+      confidence: 87,
+      alternatives: ["Ignore the change request", "Queue it after the current booking"],
+      timestamp: nowLabel()
+    });
+    this.addAdaptation({
+      id: this.nextId("adaptation"),
+      message: `Mission adapted after user interrupt: ${command}`,
+      timestamp: nowLabel(),
+      type: "evolved"
+    });
+    this.updateAgent("planner", {
+      status: "speaking",
+      currentTask: "Publishing updated plan",
+      liveText: `Replanned mission to honor: ${command}`,
+      confidence: 90
+    });
+    await this.waitStep(signal, 1);
+
+    this.updateAgent("planner", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+    await this.sendUserSms(`Plan updated. Your request "${command}" has been folded into the live mission.`);
+    this.setMissionStatus("completed", mode);
+  }
+}

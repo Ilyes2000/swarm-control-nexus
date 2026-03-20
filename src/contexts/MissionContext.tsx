@@ -104,7 +104,7 @@ export interface ReasoningEntry {
   timestamp: string;
 }
 
-interface MissionState {
+export interface MissionState {
   missionStatus: "idle" | "live" | "completed";
   agents: Agent[];
   timeline: TimelineEntry[];
@@ -137,6 +137,7 @@ interface MissionContextType extends MissionState {
   setTrainingMode: (on: boolean) => void;
   setDemoMode: (on: boolean) => void;
   setUserInput: (input: string) => void;
+  hydrateMission: (state: Partial<MissionState>) => void;
   resetMission: () => void;
 }
 
@@ -160,26 +161,55 @@ const defaultCall: CallState = { active: false, caller: "", receiver: "", durati
 
 const defaultSummary: MissionSummary = { visible: false, result: "", costBreakdown: [], timeTaken: "" };
 
-const initialState: MissionState = {
-  missionStatus: "idle",
-  agents: defaultAgents,
-  timeline: [],
-  call: defaultCall,
-  smsLog: [],
-  summary: defaultSummary,
-  reasoning: [],
-  memory: [],
-  skills: [],
-  adaptations: [],
-  trainingMode: false,
-  demoMode: false,
-  userInput: "",
-};
+export function createInitialMissionState(): MissionState {
+  return {
+    missionStatus: "idle",
+    agents: defaultAgents.map((agent) => ({ ...agent })),
+    timeline: [],
+    call: { ...defaultCall, transcript: [] },
+    smsLog: [],
+    summary: { ...defaultSummary, costBreakdown: [] },
+    reasoning: [],
+    memory: [],
+    skills: [],
+    adaptations: [],
+    trainingMode: false,
+    demoMode: false,
+    userInput: "",
+  };
+}
+
+function normalizeMissionState(state: Partial<MissionState>): MissionState {
+  const base = createInitialMissionState();
+
+  return {
+    ...base,
+    ...state,
+    agents: state.agents ?? base.agents,
+    timeline: state.timeline ?? base.timeline,
+    call: {
+      ...base.call,
+      ...state.call,
+      transcript: state.call?.transcript ?? base.call.transcript,
+    },
+    smsLog: state.smsLog ?? base.smsLog,
+    summary: {
+      ...base.summary,
+      ...state.summary,
+      costBreakdown: state.summary?.costBreakdown ?? base.summary.costBreakdown,
+      optimization: state.summary?.optimization,
+    },
+    reasoning: state.reasoning ?? base.reasoning,
+    memory: state.memory ?? base.memory,
+    skills: state.skills ?? base.skills,
+    adaptations: state.adaptations ?? base.adaptations,
+  };
+}
 
 const MissionContext = createContext<MissionContextType | null>(null);
 
 export function MissionProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<MissionState>(initialState);
+  const [state, setState] = useState<MissionState>(() => createInitialMissionState());
 
   const setMissionStatus = useCallback((missionStatus: MissionState["missionStatus"]) => {
     setState((s) => ({ ...s, missionStatus }));
@@ -257,8 +287,12 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, userInput }));
   }, []);
 
+  const hydrateMission = useCallback((nextState: Partial<MissionState>) => {
+    setState(normalizeMissionState(nextState));
+  }, []);
+
   const resetMission = useCallback(() => {
-    setState(initialState);
+    setState(createInitialMissionState());
   }, []);
 
   return (
@@ -267,7 +301,7 @@ export function MissionProvider({ children }: { children: ReactNode }) {
         ...state, setMissionStatus, updateAgent, addTimelineEntry, updateTimelineEntry,
         setCall, addCallTranscript, addSMS, setSummary, addReasoning, addMemory,
         addSkill, updateSkillUsage, addAdaptation, setTrainingMode,
-        setDemoMode, setUserInput, resetMission,
+        setDemoMode, setUserInput, hydrateMission, resetMission,
       }}
     >
       {children}

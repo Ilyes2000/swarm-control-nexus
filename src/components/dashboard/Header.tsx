@@ -6,24 +6,24 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { useMission } from "@/contexts/MissionContext";
-import { useDemoMode } from "@/hooks/useDemoMode";
+import { useMissionRuntime } from "@/hooks/useMissionRuntime";
 import { setVolume } from "@/lib/audio";
 import { CrabLogo } from "./CrabLogo";
 import { AdaptationIndicator } from "./AdaptationIndicator";
 
 export function Header() {
   const { missionStatus, demoMode, userInput, setUserInput, setDemoMode } = useMission();
-  const { startDemo, stopDemo, interruptMission } = useDemoMode();
+  const { startMission, interruptMission, connectionState } = useMissionRuntime();
   const [vol, setVol] = useState(70);
   const [interruptInput, setInterruptInput] = useState("");
   const [showInterruptFlash, setShowInterruptFlash] = useState(false);
 
   const handleDemoToggle = (checked: boolean) => {
-    if (checked) {
-      startDemo();
-    } else {
-      stopDemo();
+    if (missionStatus === "live") {
+      return;
     }
+
+    setDemoMode(checked);
   };
 
   const handleVolumeChange = (value: number[]) => {
@@ -39,29 +39,37 @@ export function Header() {
 
   const handleInterrupt = () => {
     const cmd = interruptInput.trim();
-    if (!cmd || missionStatus !== "live") return;
-    interruptMission(cmd);
+    if (!cmd || missionStatus !== "live") {
+      return;
+    }
+
+    void interruptMission(cmd);
     setInterruptInput("");
     setShowInterruptFlash(true);
-    setTimeout(() => setShowInterruptFlash(false), 1500);
+    window.setTimeout(() => setShowInterruptFlash(false), 1500);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      if (missionStatus === "live") {
-        handleInterrupt();
-      }
+    if (e.key === "Enter" && missionStatus === "live") {
+      handleInterrupt();
     }
   };
 
+  const handleStart = () => {
+    if (!userInput.trim() || missionStatus === "live") {
+      return;
+    }
+
+    void startMission(userInput, demoMode ? "simulation" : "live");
+  };
+
   const isLive = missionStatus === "live";
+  const startLabel = demoMode ? "Start Demo" : "Start Mission";
 
   return (
     <header className="glass-panel px-6 py-3 flex items-center gap-4 relative overflow-hidden">
-      {/* Background glow effect */}
       <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-secondary/5 pointer-events-none" />
 
-      {/* Interrupt flash overlay */}
       <AnimatePresence>
         {showInterruptFlash && (
           <motion.div
@@ -74,7 +82,6 @@ export function Header() {
         )}
       </AnimatePresence>
 
-      {/* Logo */}
       <div className="flex items-center gap-2 shrink-0">
         <CrabLogo />
         <h1 className="text-lg font-bold neon-text tracking-tight">
@@ -82,19 +89,17 @@ export function Header() {
         </h1>
       </div>
 
-      {/* Adaptation indicator */}
       <div className="shrink-0">
         <AdaptationIndicator />
       </div>
 
-      {/* Status Badge */}
       <motion.div
         className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono font-semibold shrink-0 ${
           isLive
             ? "bg-success/20 text-success border border-success/30"
             : missionStatus === "completed"
-            ? "bg-primary/20 text-primary border border-primary/30"
-            : "bg-muted text-muted-foreground border border-border"
+              ? "bg-primary/20 text-primary border border-primary/30"
+              : "bg-muted text-muted-foreground border border-border"
         }`}
       >
         {isLive && (
@@ -108,7 +113,14 @@ export function Header() {
         {isLive ? "LIVE" : missionStatus === "completed" ? "DONE" : "IDLE"}
       </motion.div>
 
-      {/* Input — dual purpose: mission entry or interrupt */}
+      <div className="text-[10px] font-mono text-muted-foreground shrink-0">
+        {connectionState === "connected"
+          ? "stream online"
+          : connectionState === "connecting"
+            ? "stream connecting"
+            : "stream offline"}
+      </div>
+
       <div className="flex-1 flex items-center gap-2 max-w-xl relative">
         {isLive ? (
           <>
@@ -117,7 +129,7 @@ export function Header() {
                 value={interruptInput}
                 onChange={(e) => setInterruptInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder='⚡ Interrupt: "Change to cheaper option"'
+                placeholder='Interrupt: "Change to cheaper option"'
                 className="bg-warning/10 border-warning/30 text-sm font-mono placeholder:text-warning/50 focus-visible:ring-warning/50 pr-8"
                 maxLength={200}
               />
@@ -128,7 +140,7 @@ export function Header() {
                     animate={{ opacity: 1 }}
                     className="absolute right-2 top-1/2 -translate-y-1/2"
                   >
-                    <span className="text-[9px] font-mono text-warning/60">↵ send</span>
+                    <span className="text-[9px] font-mono text-warning/60">enter</span>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -158,16 +170,15 @@ export function Header() {
         )}
       </div>
 
-      {/* Start Mission */}
       <Button
         className="shrink-0 bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-primary-foreground font-semibold shadow-lg shadow-primary/20"
-        disabled={isLive}
+        disabled={isLive || !userInput.trim()}
+        onClick={handleStart}
       >
         <Zap className="w-4 h-4" />
-        Start Mission
+        {startLabel}
       </Button>
 
-      {/* Volume Control */}
       <div className="flex items-center gap-1.5 shrink-0">
         <Button
           size="icon"
@@ -177,19 +188,12 @@ export function Header() {
         >
           {vol === 0 ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
         </Button>
-        <Slider
-          value={[vol]}
-          onValueChange={handleVolumeChange}
-          max={100}
-          step={1}
-          className="w-16"
-        />
+        <Slider value={[vol]} onValueChange={handleVolumeChange} max={100} step={1} className="w-16" />
       </div>
 
-      {/* Demo Toggle */}
       <div className="flex items-center gap-2 shrink-0">
         <span className="text-xs text-muted-foreground font-mono">Demo</span>
-        <Switch checked={demoMode} onCheckedChange={handleDemoToggle} />
+        <Switch checked={demoMode} onCheckedChange={handleDemoToggle} disabled={isLive} />
       </div>
     </header>
   );
