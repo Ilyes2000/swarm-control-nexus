@@ -11,6 +11,7 @@ export function useDemoMode() {
   const {
     setMissionStatus, updateAgent, addTimelineEntry, updateTimelineEntry,
     setCall, addCallTranscript, addSMS, setSummary, addReasoning, addMemory,
+    addSkill, addAdaptation, setTrainingMode,
     setDemoMode, setUserInput, resetMission,
   } = useMission();
 
