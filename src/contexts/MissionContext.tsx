@@ -266,6 +266,7 @@ export function MissionProvider({ children }: { children: ReactNode }) {
       value={{
         ...state, setMissionStatus, updateAgent, addTimelineEntry, updateTimelineEntry,
         setCall, addCallTranscript, addSMS, setSummary, addReasoning, addMemory,
+        addSkill, updateSkillUsage, addAdaptation, setTrainingMode,
         setDemoMode, setUserInput, resetMission,
       }}
     >
