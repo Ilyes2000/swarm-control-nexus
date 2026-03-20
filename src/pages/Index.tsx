@@ -3,6 +3,7 @@ import { Header } from "@/components/dashboard/Header";
 import { AgentPanel } from "@/components/dashboard/AgentPanel";
 import { MissionTimeline } from "@/components/dashboard/MissionTimeline";
 import { CommPanel } from "@/components/dashboard/CommPanel";
+import { ExplainabilityPanel } from "@/components/dashboard/ExplainabilityPanel";
 import { MissionSummary } from "@/components/dashboard/MissionSummary";
 
 const Index = () => {
@@ -11,7 +12,7 @@ const Index = () => {
       <div className="h-screen flex flex-col bg-background overflow-hidden">
         <Header />
 
-        <div className="flex-1 grid grid-cols-[280px_1fr_280px] gap-3 p-3 min-h-0">
+        <div className="flex-1 grid grid-cols-[240px_1fr_260px_260px] gap-3 p-3 min-h-0">
           {/* Left — Agent Swarm */}
           <div className="glass-panel p-3 overflow-hidden">
             <AgentPanel />
@@ -25,6 +26,11 @@ const Index = () => {
           {/* Right — Comms */}
           <div className="glass-panel p-3 overflow-hidden">
             <CommPanel />
+          </div>
+
+          {/* Far Right — Explainability */}
+          <div className="glass-panel p-3 overflow-hidden">
+            <ExplainabilityPanel />
           </div>
         </div>
 
