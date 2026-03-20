@@ -69,6 +69,13 @@ export function useDemoMode() {
       playTyping();
       updateAgent("planner", { status: "speaking", liveText: "Created task graph: 1) Research restaurants 2) Find movies 3) Make reservations 4) Book tickets" });
       addTimelineEntry({ id: "t2", timestamp: "00:03", agentId: "planner", agentEmoji: "🧠", agentName: "Planner Agent", description: "Task graph created with 4 subtasks", status: "success" });
+      addReasoning({
+        id: "r1", agentId: "planner", agentEmoji: "🧠", agentName: "Planner Agent", timestamp: "00:03",
+        decision: "Decomposed into 4 parallel subtasks",
+        reasoning: "Dinner + movie requires sequential booking (dinner first to set timeline). Research must precede calls. Negotiation can run after research completes. Scheduling finalizes after all bookings confirmed.",
+        confidence: 95,
+        alternatives: ["Single sequential pipeline (slower)", "3-task split without negotiation", "Parallel restaurant + movie research"],
+      });
       playBlip();
     }, 3500);
 
