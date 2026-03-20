@@ -168,6 +168,13 @@ export function useDemoMode() {
       playTyping();
       updateAgent("negotiation", { status: "speaking", liveText: "Found 15% off dinner with promo code NIGHT15 + $2 off movie tickets on Fandango" });
       addTimelineEntry({ id: "t8", timestamp: "00:18", agentId: "negotiation", agentEmoji: "💰", agentName: "Negotiation Agent", description: "Saved $18.50 with combined deals", status: "success" });
+      addReasoning({
+        id: "r4", agentId: "negotiation", agentEmoji: "💰", agentName: "Negotiation Agent", timestamp: "00:18",
+        decision: "Applied NIGHT15 promo + Fandango discount stack",
+        reasoning: "Cross-referenced 8 coupon databases and 3 cashback platforms. NIGHT15 (15% off) is the highest valid dinner promo — expires tomorrow. Fandango $2 off is stackable with no minimum. Combined savings of $18.50 (16.1% total discount).",
+        confidence: 97,
+        alternatives: ["Groupon deal (12% off, requires prepay)", "Restaurant loyalty program (5% — too low)", "Full price with no discounts"],
+      });
       playBlip();
     }, 23500);
 
