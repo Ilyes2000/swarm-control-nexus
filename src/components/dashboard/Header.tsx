@@ -76,10 +76,15 @@ export function Header() {
 
       {/* Logo */}
       <div className="flex items-center gap-2 shrink-0">
-        <Zap className="w-6 h-6 text-primary" />
+        <CrabLogo />
         <h1 className="text-lg font-bold neon-text tracking-tight">
-          ClawSwarm <span className="text-muted-foreground font-normal">Operator</span>
+          ClawSwarm <span className="text-muted-foreground font-normal text-xs">MetaClaw</span>
         </h1>
+      </div>
+
+      {/* Adaptation indicator */}
+      <div className="shrink-0">
+        <AdaptationIndicator />
       </div>
 
       {/* Status Badge */}
