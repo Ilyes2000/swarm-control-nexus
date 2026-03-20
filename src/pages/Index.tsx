@@ -10,6 +10,7 @@ import { ExplainabilityPanel } from "@/components/dashboard/ExplainabilityPanel"
 import { MemoryPanel } from "@/components/dashboard/MemoryPanel";
 import { MissionSummary } from "@/components/dashboard/MissionSummary";
 import { SkillLibrary } from "@/components/dashboard/SkillLibrary";
+import { AgentNetworkGraph } from "@/components/dashboard/AgentNetworkGraph";
 
 interface MissionTab {
   id: string;
