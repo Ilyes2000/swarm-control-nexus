@@ -48,7 +48,7 @@ export function MissionTimeline() {
                 entry.status === "failed" || entry.status === "retrying" || entry.status === "fallback"
                   ? statusBg[entry.status]
                   : ""
-              }`}
+              } ${entry.description.includes("Learning from failure") || entry.description.includes("New skill") ? "learning-active" : ""}`}
             >
               <div className={`w-8 h-8 rounded-full bg-muted border flex items-center justify-center text-sm shrink-0 z-10 ${
                 entry.status === "failed" ? "border-destructive/50" : "border-border"
