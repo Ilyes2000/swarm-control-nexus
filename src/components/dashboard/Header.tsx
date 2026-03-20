@@ -78,7 +78,7 @@ export function Header() {
       <div className="flex items-center gap-2 shrink-0">
         <CrabLogo />
         <h1 className="text-lg font-bold neon-text tracking-tight">
-          ClawSwarm <span className="text-muted-foreground font-normal text-xs">MetaClaw</span>
+          ClawSwarm <span className="text-muted-foreground font-normal text-xs">Nexus</span>
         </h1>
       </div>
 
