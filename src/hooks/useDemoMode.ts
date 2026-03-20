@@ -23,6 +23,7 @@ export function useDemoMode() {
     addCallTranscript,
     addSMS,
     setSummary,
+    addReasoning,
     setDemoMode,
     setUserInput,
     resetMission,
