@@ -131,6 +131,10 @@ interface MissionContextType extends MissionState {
   setSummary: (s: MissionSummary) => void;
   addReasoning: (entry: ReasoningEntry) => void;
   addMemory: (entry: MemoryEntry) => void;
+  addSkill: (skill: Skill) => void;
+  updateSkillUsage: (id: string) => void;
+  addAdaptation: (event: AdaptationEvent) => void;
+  setTrainingMode: (on: boolean) => void;
   setDemoMode: (on: boolean) => void;
   setUserInput: (input: string) => void;
   resetMission: () => void;
