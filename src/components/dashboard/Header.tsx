@@ -8,6 +8,8 @@ import { Slider } from "@/components/ui/slider";
 import { useMission } from "@/contexts/MissionContext";
 import { useDemoMode } from "@/hooks/useDemoMode";
 import { setVolume } from "@/lib/audio";
+import { CrabLogo } from "./CrabLogo";
+import { AdaptationIndicator } from "./AdaptationIndicator";
 
 export function Header() {
   const { missionStatus, demoMode, userInput, setUserInput, setDemoMode } = useMission();
