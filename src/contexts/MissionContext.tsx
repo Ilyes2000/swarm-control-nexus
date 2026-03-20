@@ -113,6 +113,9 @@ interface MissionState {
   summary: MissionSummary;
   reasoning: ReasoningEntry[];
   memory: MemoryEntry[];
+  skills: Skill[];
+  adaptations: AdaptationEvent[];
+  trainingMode: boolean;
   demoMode: boolean;
   userInput: string;
 }
