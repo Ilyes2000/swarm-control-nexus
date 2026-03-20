@@ -234,11 +234,108 @@ export function useDemoMode() {
     }, 31000);
   }, [resetMission, setDemoMode, setUserInput, delay, setMissionStatus, updateAgent, addTimelineEntry, setCall, addCallTranscript, addSMS, setSummary, addReasoning]);
 
+  const interruptMission = useCallback((command: string) => {
+    // Clear all pending scheduled events
+    clearAll();
+
+    // Show interrupt in timeline
+    playAgentActivate();
+    addTimelineEntry({
+      id: `int-${Date.now()}`, timestamp: "⚡", agentId: "planner", agentEmoji: "⚡",
+      agentName: "User Interrupt", description: `"${command}"`, status: "pending",
+    });
+
+    // Planner reacts to interrupt
+    delay(() => {
+      playAgentActivate();
+      updateAgent("planner", { status: "thinking", currentTask: "Re-planning mission", liveText: `Processing interrupt: "${command}"` });
+      addTimelineEntry({
+        id: `int-plan-${Date.now()}`, timestamp: "⚡+1", agentId: "planner", agentEmoji: "🧠",
+        agentName: "Planner Agent", description: "Re-evaluating mission with new constraint", status: "pending",
+      });
+    }, 800);
+
+    delay(() => {
+      playTyping();
+      updateAgent("planner", { status: "speaking", liveText: `Adapting plan: "${command}" — reassigning agents...` });
+      addReasoning({
+        id: `r-int-${Date.now()}`, agentId: "planner", agentEmoji: "🧠", agentName: "Planner Agent", timestamp: "⚡+2",
+        decision: `Accepted user override: "${command}"`,
+        reasoning: `User interrupt received mid-mission. Halted all pending agent actions. Re-evaluating task graph with new constraint applied. Affected agents will receive updated objectives.`,
+        confidence: 85,
+        alternatives: ["Ignore interrupt and continue current plan", "Queue change for after current task completes"],
+      });
+      playBlip();
+    }, 2500);
+
+    // Research agent adapts
+    delay(() => {
+      playAgentActivate();
+      updateAgent("planner", { status: "idle", liveText: "", currentTask: "" });
+      updateAgent("research", { status: "thinking", currentTask: "Searching alternatives", liveText: `Finding options matching: "${command}"` });
+      addTimelineEntry({
+        id: `int-research-${Date.now()}`, timestamp: "⚡+3", agentId: "research", agentEmoji: "🔍",
+        agentName: "Research Agent", description: `Searching for alternatives based on: "${command}"`, status: "pending",
+      });
+      playBlip();
+    }, 4000);
+
+    delay(() => {
+      playTyping();
+      updateAgent("research", { status: "speaking", liveText: "Found 3 matching alternatives. Updating recommendations..." });
+      addTimelineEntry({
+        id: `int-research-done-${Date.now()}`, timestamp: "⚡+5", agentId: "research", agentEmoji: "🔍",
+        agentName: "Research Agent", description: "Found updated options matching new criteria", status: "success",
+      });
+      addReasoning({
+        id: `r-int2-${Date.now()}`, agentId: "research", agentEmoji: "🔍", agentName: "Research Agent", timestamp: "⚡+5",
+        decision: "Pivoted search with updated constraints",
+        reasoning: `Original results invalidated by user interrupt. Re-ranked all candidates against new criteria. Top 3 alternatives identified within 2 seconds.`,
+        confidence: 89,
+        alternatives: ["Keep original selection", "Expand search radius", "Request clarification from user"],
+      });
+      playBlip();
+    }, 6500);
+
+    // Negotiation re-checks
+    delay(() => {
+      updateAgent("research", { status: "idle", liveText: "", currentTask: "" });
+      playAgentActivate();
+      updateAgent("negotiation", { status: "thinking", currentTask: "Re-checking deals", liveText: "Validating discounts for updated plan..." });
+    }, 8000);
+
+    delay(() => {
+      playTyping();
+      updateAgent("negotiation", { status: "speaking", liveText: "Updated deal found! New savings applied to revised plan." });
+      addTimelineEntry({
+        id: `int-neg-${Date.now()}`, timestamp: "⚡+7", agentId: "negotiation", agentEmoji: "💰",
+        agentName: "Negotiation Agent", description: "Deals re-validated for updated plan", status: "success",
+      });
+      playBlip();
+    }, 10000);
+
+    // SMS update
+    delay(() => {
+      updateAgent("negotiation", { status: "idle", liveText: "", currentTask: "" });
+      playSMS();
+      addSMS({
+        id: `sms-int-${Date.now()}`, from: "ClawSwarm", timestamp: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+        text: `📝 Plan updated!\n\nYour request: "${command}"\n\n✅ Mission adapted successfully.\nNew options applied with best available deals.`,
+        direction: "sent",
+      });
+      addTimelineEntry({
+        id: `int-done-${Date.now()}`, timestamp: "⚡+9", agentId: "planner", agentEmoji: "🧠",
+        agentName: "Planner Agent", description: "Mission re-planned successfully with user changes ✨", status: "success",
+      });
+      playMissionComplete();
+    }, 12000);
+  }, [clearAll, delay, updateAgent, addTimelineEntry, addReasoning, addSMS, playAgentActivate, playTyping, playBlip, playSMS, playMissionComplete]);
+
   const stopDemo = useCallback(() => {
     clearAll();
     stopAmbient();
     resetMission();
   }, [clearAll, resetMission]);
 
-  return { startDemo, stopDemo };
+  return { startDemo, stopDemo, interruptMission };
 }
