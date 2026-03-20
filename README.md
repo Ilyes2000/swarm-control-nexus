@@ -186,7 +186,7 @@ cd ..
 
 ### 3. Configure backend environment
 
-Create or edit [`.env`](./clawswarm-backend/.env) inside `clawswarm-backend/`:
+Copy [`.env.example`](./clawswarm-backend/.env.example) to `clawswarm-backend/.env`, then fill in your real values:
 
 ```env
 TELNYX_API_KEY=your_key
