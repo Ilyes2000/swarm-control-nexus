@@ -9,6 +9,7 @@ import { CommPanel } from "@/components/dashboard/CommPanel";
 import { ExplainabilityPanel } from "@/components/dashboard/ExplainabilityPanel";
 import { MemoryPanel } from "@/components/dashboard/MemoryPanel";
 import { MissionSummary } from "@/components/dashboard/MissionSummary";
+import { SkillLibrary } from "@/components/dashboard/SkillLibrary";
 
 interface MissionTab {
   id: string;
@@ -16,7 +17,7 @@ interface MissionTab {
 }
 
 function MissionDashboard() {
-  const [bottomPanel, setBottomPanel] = useState<"reasoning" | "memory">("reasoning");
+  const [bottomPanel, setBottomPanel] = useState<"reasoning" | "memory" | "skills">("reasoning");
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -33,7 +34,7 @@ function MissionDashboard() {
           <MissionTimeline />
         </div>
 
-        {/* Right — Tabbed: Comms / Reasoning / Memory */}
+        {/* Right — Tabbed panels */}
         <div className="flex flex-col gap-2 min-h-0">
           <div className="glass-panel p-2.5 flex-1 overflow-hidden">
             <CommPanel />
@@ -56,9 +57,17 @@ function MissionDashboard() {
               >
                 Memory
               </button>
+              <button
+                onClick={() => setBottomPanel("skills")}
+                className={`text-[9px] font-mono px-2 py-0.5 rounded transition-colors ${
+                  bottomPanel === "skills" ? "bg-neon-cyan/20 text-neon-cyan" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Skills
+              </button>
             </div>
             <div className="h-[calc(100%-28px)] overflow-hidden">
-              {bottomPanel === "reasoning" ? <ExplainabilityPanel /> : <MemoryPanel />}
+              {bottomPanel === "reasoning" ? <ExplainabilityPanel /> : bottomPanel === "memory" ? <MemoryPanel /> : <SkillLibrary />}
             </div>
           </div>
         </div>

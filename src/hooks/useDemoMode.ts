@@ -82,14 +82,18 @@ export function useDemoMode() {
       playBlip();
     }, 5800);
 
-    // RETRY: First attempt fails
+    // RETRY: First attempt fails — triggers learning loop
     delay(() => {
       updateAgent("research", { liveText: "Error: Yelp API rate limit exceeded", confidence: 30 });
       addTimelineEntry({ id: "t3f", timestamp: "00:06", agentId: "research", agentEmoji: "🔍", agentName: "Research Agent", description: "Yelp API rate limit — request failed", status: "failed" });
+      addAdaptation({ id: "a1", message: "🧠 Analyzing failure...", timestamp: "00:06", type: "learning" });
       playBlip();
     }, 6800);
 
     delay(() => {
+      addAdaptation({ id: "a2", message: "⚡ New skill created: API Fallback Strategy", timestamp: "00:07", type: "evolved" });
+      addSkill({ id: "sk1", title: "API Fallback Strategy", description: "When primary API fails with rate limit, automatically switch to Google Places as fallback provider", source: "Yelp API failure", version: 1, usageCount: 0, createdAt: "00:07", agentId: "research" });
+      addTimelineEntry({ id: "t3l", timestamp: "00:07", agentId: "research", agentEmoji: "🧠", agentName: "System", description: "Learning from failure... New skill acquired", status: "fallback" });
       updateAgent("research", { status: "retrying", liveText: "Switching to Google Places fallback...", confidence: 55 });
       addTimelineEntry({ id: "t3r", timestamp: "00:07", agentId: "research", agentEmoji: "🔍", agentName: "Research Agent", description: "Retrying with Google Places API (fallback)", status: "retrying", retryCount: 1 });
     }, 7500);
