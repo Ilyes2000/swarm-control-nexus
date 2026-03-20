@@ -30,6 +30,24 @@ export interface MemoryEntry {
   timestamp: string;
 }
 
+export interface Skill {
+  id: string;
+  title: string;
+  description: string;
+  source: string;
+  version: number;
+  usageCount: number;
+  createdAt: string;
+  agentId: string;
+}
+
+export interface AdaptationEvent {
+  id: string;
+  message: string;
+  timestamp: string;
+  type: "learning" | "improving" | "evolved";
+}
+
 export interface TimelineEntry {
   id: string;
   timestamp: string;
