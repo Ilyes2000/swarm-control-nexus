@@ -45,6 +45,18 @@ export interface MissionSummary {
   timeTaken: string;
 }
 
+export interface ReasoningEntry {
+  id: string;
+  agentId: string;
+  agentEmoji: string;
+  agentName: string;
+  decision: string;
+  reasoning: string;
+  confidence: number; // 0-100
+  alternatives: string[];
+  timestamp: string;
+}
+
 interface MissionState {
   missionStatus: "idle" | "live" | "completed";
   agents: Agent[];
@@ -52,6 +64,7 @@ interface MissionState {
   call: CallState;
   smsLog: SMSMessage[];
   summary: MissionSummary;
+  reasoning: ReasoningEntry[];
   demoMode: boolean;
   userInput: string;
 }
@@ -64,6 +77,7 @@ interface MissionContextType extends MissionState {
   addCallTranscript: (speaker: string, text: string) => void;
   addSMS: (msg: SMSMessage) => void;
   setSummary: (s: MissionSummary) => void;
+  addReasoning: (entry: ReasoningEntry) => void;
   setDemoMode: (on: boolean) => void;
   setUserInput: (input: string) => void;
   resetMission: () => void;
@@ -100,6 +114,7 @@ const initialState: MissionState = {
   call: defaultCall,
   smsLog: [],
   summary: defaultSummary,
+  reasoning: [],
   demoMode: false,
   userInput: "",
 };
@@ -143,6 +158,10 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, summary }));
   }, []);
 
+  const addReasoning = useCallback((entry: ReasoningEntry) => {
+    setState((s) => ({ ...s, reasoning: [...s.reasoning, entry] }));
+  }, []);
+
   const setDemoMode = useCallback((demoMode: boolean) => {
     setState((s) => ({ ...s, demoMode }));
   }, []);
@@ -166,6 +185,7 @@ export function MissionProvider({ children }: { children: ReactNode }) {
         addCallTranscript,
         addSMS,
         setSummary,
+        addReasoning,
         setDemoMode,
         setUserInput,
         resetMission,
