@@ -230,6 +230,25 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, memory: [...s.memory, entry] }));
   }, []);
 
+  const addSkill = useCallback((skill: Skill) => {
+    setState((s) => ({ ...s, skills: [...s.skills, skill] }));
+  }, []);
+
+  const updateSkillUsage = useCallback((id: string) => {
+    setState((s) => ({
+      ...s,
+      skills: s.skills.map((sk) => (sk.id === id ? { ...sk, usageCount: sk.usageCount + 1 } : sk)),
+    }));
+  }, []);
+
+  const addAdaptation = useCallback((event: AdaptationEvent) => {
+    setState((s) => ({ ...s, adaptations: [...s.adaptations, event] }));
+  }, []);
+
+  const setTrainingMode = useCallback((trainingMode: boolean) => {
+    setState((s) => ({ ...s, trainingMode }));
+  }, []);
+
   const setDemoMode = useCallback((demoMode: boolean) => {
     setState((s) => ({ ...s, demoMode }));
   }, []);
