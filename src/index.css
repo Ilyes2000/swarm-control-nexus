@@ -144,3 +144,26 @@ body::before {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
+
+@keyframes learning-glow {
+  0%, 100% {
+    box-shadow: 0 0 5px hsl(var(--neon-cyan) / 0.2), 0 0 10px hsl(var(--neon-cyan) / 0.1);
+  }
+  50% {
+    box-shadow: 0 0 15px hsl(var(--neon-cyan) / 0.5), 0 0 30px hsl(var(--neon-cyan) / 0.2), 0 0 45px hsl(var(--neon-cyan) / 0.1);
+  }
+}
+
+@keyframes evolve-pulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.02); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.learning-active {
+  animation: learning-glow 2s ease-in-out infinite;
+}
+
+.evolve-pulse {
+  animation: evolve-pulse 1.5s ease-in-out infinite;
+}

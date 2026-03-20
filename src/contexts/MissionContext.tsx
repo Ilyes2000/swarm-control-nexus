@@ -30,6 +30,24 @@ export interface MemoryEntry {
   timestamp: string;
 }
 
+export interface Skill {
+  id: string;
+  title: string;
+  description: string;
+  source: string;
+  version: number;
+  usageCount: number;
+  createdAt: string;
+  agentId: string;
+}
+
+export interface AdaptationEvent {
+  id: string;
+  message: string;
+  timestamp: string;
+  type: "learning" | "improving" | "evolved";
+}
+
 export interface TimelineEntry {
   id: string;
   timestamp: string;
@@ -95,6 +113,9 @@ interface MissionState {
   summary: MissionSummary;
   reasoning: ReasoningEntry[];
   memory: MemoryEntry[];
+  skills: Skill[];
+  adaptations: AdaptationEvent[];
+  trainingMode: boolean;
   demoMode: boolean;
   userInput: string;
 }
@@ -110,6 +131,10 @@ interface MissionContextType extends MissionState {
   setSummary: (s: MissionSummary) => void;
   addReasoning: (entry: ReasoningEntry) => void;
   addMemory: (entry: MemoryEntry) => void;
+  addSkill: (skill: Skill) => void;
+  updateSkillUsage: (id: string) => void;
+  addAdaptation: (event: AdaptationEvent) => void;
+  setTrainingMode: (on: boolean) => void;
   setDemoMode: (on: boolean) => void;
   setUserInput: (input: string) => void;
   resetMission: () => void;
@@ -144,6 +169,9 @@ const initialState: MissionState = {
   summary: defaultSummary,
   reasoning: [],
   memory: [],
+  skills: [],
+  adaptations: [],
+  trainingMode: false,
   demoMode: false,
   userInput: "",
 };
@@ -202,6 +230,25 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, memory: [...s.memory, entry] }));
   }, []);
 
+  const addSkill = useCallback((skill: Skill) => {
+    setState((s) => ({ ...s, skills: [...s.skills, skill] }));
+  }, []);
+
+  const updateSkillUsage = useCallback((id: string) => {
+    setState((s) => ({
+      ...s,
+      skills: s.skills.map((sk) => (sk.id === id ? { ...sk, usageCount: sk.usageCount + 1 } : sk)),
+    }));
+  }, []);
+
+  const addAdaptation = useCallback((event: AdaptationEvent) => {
+    setState((s) => ({ ...s, adaptations: [...s.adaptations, event] }));
+  }, []);
+
+  const setTrainingMode = useCallback((trainingMode: boolean) => {
+    setState((s) => ({ ...s, trainingMode }));
+  }, []);
+
   const setDemoMode = useCallback((demoMode: boolean) => {
     setState((s) => ({ ...s, demoMode }));
   }, []);
@@ -219,6 +266,7 @@ export function MissionProvider({ children }: { children: ReactNode }) {
       value={{
         ...state, setMissionStatus, updateAgent, addTimelineEntry, updateTimelineEntry,
         setCall, addCallTranscript, addSMS, setSummary, addReasoning, addMemory,
+        addSkill, updateSkillUsage, addAdaptation, setTrainingMode,
         setDemoMode, setUserInput, resetMission,
       }}
     >

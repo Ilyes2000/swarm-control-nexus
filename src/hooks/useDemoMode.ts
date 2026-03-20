@@ -11,6 +11,7 @@ export function useDemoMode() {
   const {
     setMissionStatus, updateAgent, addTimelineEntry, updateTimelineEntry,
     setCall, addCallTranscript, addSMS, setSummary, addReasoning, addMemory,
+    addSkill, addAdaptation, setTrainingMode,
     setDemoMode, setUserInput, resetMission,
   } = useMission();
 
@@ -81,14 +82,18 @@ export function useDemoMode() {
       playBlip();
     }, 5800);
 
-    // RETRY: First attempt fails
+    // RETRY: First attempt fails — triggers learning loop
     delay(() => {
       updateAgent("research", { liveText: "Error: Yelp API rate limit exceeded", confidence: 30 });
       addTimelineEntry({ id: "t3f", timestamp: "00:06", agentId: "research", agentEmoji: "🔍", agentName: "Research Agent", description: "Yelp API rate limit — request failed", status: "failed" });
+      addAdaptation({ id: "a1", message: "🧠 Analyzing failure...", timestamp: "00:06", type: "learning" });
       playBlip();
     }, 6800);
 
     delay(() => {
+      addAdaptation({ id: "a2", message: "⚡ New skill created: API Fallback Strategy", timestamp: "00:07", type: "evolved" });
+      addSkill({ id: "sk1", title: "API Fallback Strategy", description: "When primary API fails with rate limit, automatically switch to Google Places as fallback provider", source: "Yelp API failure", version: 1, usageCount: 0, createdAt: "00:07", agentId: "research" });
+      addTimelineEntry({ id: "t3l", timestamp: "00:07", agentId: "research", agentEmoji: "🧠", agentName: "System", description: "Learning from failure... New skill acquired", status: "fallback" });
       updateAgent("research", { status: "retrying", liveText: "Switching to Google Places fallback...", confidence: 55 });
       addTimelineEntry({ id: "t3r", timestamp: "00:07", agentId: "research", agentEmoji: "🔍", agentName: "Research Agent", description: "Retrying with Google Places API (fallback)", status: "retrying", retryCount: 1 });
     }, 7500);
@@ -232,7 +237,13 @@ export function useDemoMode() {
       updateAgent("scheduler", { status: "idle", liveText: "", currentTask: "", confidence: 0 });
     }, 30500);
 
-    // Mission complete
+    // Mission complete — generate more skills + start training mode
+    delay(() => {
+      addSkill({ id: "sk2", title: "Phone Over Web Booking", description: "Prefer phone calls when online booking shows unavailable — hosts reserve tables for callers", source: "Online unavailable", version: 1, usageCount: 1, createdAt: "00:20", agentId: "call" });
+      addSkill({ id: "sk3", title: "Promo Code Stacking", description: "Cross-reference coupon databases to find stackable discount codes for maximum savings", source: "Negotiation success", version: 1, usageCount: 1, createdAt: "00:18", agentId: "negotiation" });
+      addAdaptation({ id: "a3", message: "📊 Performance increased: +3 skills learned this mission", timestamp: "00:24", type: "evolved" });
+    }, 31500);
+
     delay(() => {
       playMissionComplete();
       setMissionStatus("completed");
@@ -263,7 +274,23 @@ export function useDemoMode() {
       playBlip();
       setTimeout(() => stopAmbient(), 3000);
     }, 33000);
-  }, [resetMission, setDemoMode, setUserInput, delay, setMissionStatus, updateAgent, addTimelineEntry, updateTimelineEntry, setCall, addCallTranscript, addSMS, setSummary, addReasoning, addMemory]);
+
+    // Opportunistic training mode — starts after mission completes
+    delay(() => {
+      setTrainingMode(true);
+      addAdaptation({ id: "a4", message: "💤 Learning Mode Active — optimizing strategies...", timestamp: "idle", type: "improving" });
+    }, 36000);
+
+    delay(() => {
+      addAdaptation({ id: "a5", message: "⚡ Skill evolved: API Fallback Strategy v2 — added timeout prediction", timestamp: "idle", type: "evolved" });
+      addSkill({ id: "sk1v2", title: "API Fallback Strategy v2", description: "Predict rate limits based on time-of-day patterns and pre-select fallback before failure occurs", source: "Training optimization", version: 2, usageCount: 0, createdAt: "training", agentId: "research" });
+    }, 39000);
+
+    delay(() => {
+      addAdaptation({ id: "a6", message: "🧠 New behavior learned: Parallel restaurant + movie search", timestamp: "idle", type: "learning" });
+      setTrainingMode(false);
+    }, 42000);
+  }, [resetMission, setDemoMode, setUserInput, delay, setMissionStatus, updateAgent, addTimelineEntry, updateTimelineEntry, setCall, addCallTranscript, addSMS, setSummary, addReasoning, addMemory, addSkill, addAdaptation, setTrainingMode]);
 
   const interruptMission = useCallback((command: string) => {
     clearAll();

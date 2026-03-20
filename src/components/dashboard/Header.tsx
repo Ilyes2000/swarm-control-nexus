@@ -8,6 +8,8 @@ import { Slider } from "@/components/ui/slider";
 import { useMission } from "@/contexts/MissionContext";
 import { useDemoMode } from "@/hooks/useDemoMode";
 import { setVolume } from "@/lib/audio";
+import { CrabLogo } from "./CrabLogo";
+import { AdaptationIndicator } from "./AdaptationIndicator";
 
 export function Header() {
   const { missionStatus, demoMode, userInput, setUserInput, setDemoMode } = useMission();
@@ -74,10 +76,15 @@ export function Header() {
 
       {/* Logo */}
       <div className="flex items-center gap-2 shrink-0">
-        <Zap className="w-6 h-6 text-primary" />
+        <CrabLogo />
         <h1 className="text-lg font-bold neon-text tracking-tight">
-          ClawSwarm <span className="text-muted-foreground font-normal">Operator</span>
+          ClawSwarm <span className="text-muted-foreground font-normal text-xs">MetaClaw</span>
         </h1>
+      </div>
+
+      {/* Adaptation indicator */}
+      <div className="shrink-0">
+        <AdaptationIndicator />
       </div>
 
       {/* Status Badge */}
