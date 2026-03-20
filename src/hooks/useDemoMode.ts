@@ -232,7 +232,7 @@ export function useDemoMode() {
       // Fade out ambient after completion
       setTimeout(() => stopAmbient(), 3000);
     }, 31000);
-  }, [resetMission, setDemoMode, setUserInput, delay, setMissionStatus, updateAgent, addTimelineEntry, setCall, addCallTranscript, addSMS, setSummary]);
+  }, [resetMission, setDemoMode, setUserInput, delay, setMissionStatus, updateAgent, addTimelineEntry, setCall, addCallTranscript, addSMS, setSummary, addReasoning]);
 
   const stopDemo = useCallback(() => {
     clearAll();
