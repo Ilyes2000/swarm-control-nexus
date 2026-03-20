@@ -92,6 +92,13 @@ export function useDemoMode() {
       playTyping();
       updateAgent("research", { status: "speaking", liveText: "Found: La Bella Vita (4.8★), The Grand Cinema showing 'Inception' at 9PM" });
       addTimelineEntry({ id: "t4", timestamp: "00:08", agentId: "research", agentEmoji: "🔍", agentName: "Research Agent", description: "Found La Bella Vita (4.8★) + Inception at 9PM", status: "success" });
+      addReasoning({
+        id: "r2", agentId: "research", agentEmoji: "🔍", agentName: "Research Agent", timestamp: "00:08",
+        decision: "Selected La Bella Vita over 12 other options",
+        reasoning: "Ranked by composite score: rating (4.8★ × 0.4) + proximity (0.8mi × 0.3) + availability (tonight × 0.2) + cuisine match (Italian × 0.1). La Bella Vita scored 0.94/1.0, 23% higher than runner-up.",
+        confidence: 92,
+        alternatives: ["Chez Pierre (4.6★, French, 1.2mi)", "Sakura Garden (4.9★, Japanese, 2.5mi — too far)", "Mario's Trattoria (4.5★, Italian, 0.5mi — lower rating)"],
+      });
       playBlip();
     }, 8000);
 
