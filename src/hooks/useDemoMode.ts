@@ -146,6 +146,13 @@ export function useDemoMode() {
       setCall({ active: true, caller: "Call Agent", receiver: "La Bella Vita", duration: 12, transcript: [], status: "ended" });
       updateAgent("call", { status: "idle", liveText: "", currentTask: "" });
       addTimelineEntry({ id: "t6", timestamp: "00:14", agentId: "call", agentEmoji: "📞", agentName: "Call Agent", description: "Reservation confirmed: 7 PM, table for 2", status: "success" });
+      addReasoning({
+        id: "r3", agentId: "call", agentEmoji: "📞", agentName: "Call Agent", timestamp: "00:14",
+        decision: "Used phone call instead of online booking",
+        reasoning: "La Bella Vita's online reservation system showed 'unavailable' for tonight. Phone call bypasses web availability limits — hosts often hold tables for phone requests. Window table secured that wasn't listed online.",
+        confidence: 88,
+        alternatives: ["OpenTable booking (showed no availability)", "Walk-in (risky, no guarantee)", "Try different restaurant"],
+      });
       playBlip();
     }, 20500);
 
