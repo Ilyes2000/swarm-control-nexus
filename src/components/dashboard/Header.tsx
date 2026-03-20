@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
-import { Mic, Zap, Radio, Volume2, VolumeX } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Mic, Zap, Radio, Volume2, VolumeX, SendHorizonal } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -11,8 +11,10 @@ import { setVolume } from "@/lib/audio";
 
 export function Header() {
   const { missionStatus, demoMode, userInput, setUserInput, setDemoMode } = useMission();
-  const { startDemo, stopDemo } = useDemoMode();
+  const { startDemo, stopDemo, interruptMission } = useDemoMode();
   const [vol, setVol] = useState(70);
+  const [interruptInput, setInterruptInput] = useState("");
+  const [showInterruptFlash, setShowInterruptFlash] = useState(false);
 
   const handleDemoToggle = (checked: boolean) => {
     if (checked) {
@@ -33,12 +35,42 @@ export function Header() {
     setVolume(newVol / 100);
   };
 
+  const handleInterrupt = () => {
+    const cmd = interruptInput.trim();
+    if (!cmd || missionStatus !== "live") return;
+    interruptMission(cmd);
+    setInterruptInput("");
+    setShowInterruptFlash(true);
+    setTimeout(() => setShowInterruptFlash(false), 1500);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      if (missionStatus === "live") {
+        handleInterrupt();
+      }
+    }
+  };
+
   const isLive = missionStatus === "live";
 
   return (
     <header className="glass-panel px-6 py-3 flex items-center gap-4 relative overflow-hidden">
       {/* Background glow effect */}
       <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-secondary/5 pointer-events-none" />
+
+      {/* Interrupt flash overlay */}
+      <AnimatePresence>
+        {showInterruptFlash && (
+          <motion.div
+            initial={{ opacity: 0.6 }}
+            animate={{ opacity: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 1.5 }}
+            className="absolute inset-0 bg-warning/10 pointer-events-none z-10"
+          />
+        )}
+      </AnimatePresence>
 
       {/* Logo */}
       <div className="flex items-center gap-2 shrink-0">
@@ -69,17 +101,54 @@ export function Header() {
         {isLive ? "LIVE" : missionStatus === "completed" ? "DONE" : "IDLE"}
       </motion.div>
 
-      {/* Input */}
-      <div className="flex-1 flex items-center gap-2 max-w-xl">
-        <Input
-          value={userInput}
-          onChange={(e) => setUserInput(e.target.value)}
-          placeholder="Enter your mission..."
-          className="bg-muted/50 border-border/50 text-sm font-mono"
-        />
-        <Button size="icon" variant="ghost" className="shrink-0 text-muted-foreground hover:text-primary">
-          <Mic className="w-4 h-4" />
-        </Button>
+      {/* Input — dual purpose: mission entry or interrupt */}
+      <div className="flex-1 flex items-center gap-2 max-w-xl relative">
+        {isLive ? (
+          <>
+            <div className="relative flex-1">
+              <Input
+                value={interruptInput}
+                onChange={(e) => setInterruptInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder='⚡ Interrupt: "Change to cheaper option"'
+                className="bg-warning/10 border-warning/30 text-sm font-mono placeholder:text-warning/50 focus-visible:ring-warning/50 pr-8"
+                maxLength={200}
+              />
+              <AnimatePresence>
+                {isLive && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2"
+                  >
+                    <span className="text-[9px] font-mono text-warning/60">↵ send</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="shrink-0 text-warning hover:text-warning hover:bg-warning/10"
+              onClick={handleInterrupt}
+              disabled={!interruptInput.trim()}
+            >
+              <SendHorizonal className="w-4 h-4" />
+            </Button>
+          </>
+        ) : (
+          <>
+            <Input
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+              placeholder="Enter your mission..."
+              className="bg-muted/50 border-border/50 text-sm font-mono"
+            />
+            <Button size="icon" variant="ghost" className="shrink-0 text-muted-foreground hover:text-primary">
+              <Mic className="w-4 h-4" />
+            </Button>
+          </>
+        )}
       </div>
 
       {/* Start Mission */}
