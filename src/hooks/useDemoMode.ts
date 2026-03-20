@@ -23,6 +23,7 @@ export function useDemoMode() {
     addCallTranscript,
     addSMS,
     setSummary,
+    addReasoning,
     setDemoMode,
     setUserInput,
     resetMission,
@@ -68,6 +69,13 @@ export function useDemoMode() {
       playTyping();
       updateAgent("planner", { status: "speaking", liveText: "Created task graph: 1) Research restaurants 2) Find movies 3) Make reservations 4) Book tickets" });
       addTimelineEntry({ id: "t2", timestamp: "00:03", agentId: "planner", agentEmoji: "🧠", agentName: "Planner Agent", description: "Task graph created with 4 subtasks", status: "success" });
+      addReasoning({
+        id: "r1", agentId: "planner", agentEmoji: "🧠", agentName: "Planner Agent", timestamp: "00:03",
+        decision: "Decomposed into 4 parallel subtasks",
+        reasoning: "Dinner + movie requires sequential booking (dinner first to set timeline). Research must precede calls. Negotiation can run after research completes. Scheduling finalizes after all bookings confirmed.",
+        confidence: 95,
+        alternatives: ["Single sequential pipeline (slower)", "3-task split without negotiation", "Parallel restaurant + movie research"],
+      });
       playBlip();
     }, 3500);
 
@@ -84,6 +92,13 @@ export function useDemoMode() {
       playTyping();
       updateAgent("research", { status: "speaking", liveText: "Found: La Bella Vita (4.8★), The Grand Cinema showing 'Inception' at 9PM" });
       addTimelineEntry({ id: "t4", timestamp: "00:08", agentId: "research", agentEmoji: "🔍", agentName: "Research Agent", description: "Found La Bella Vita (4.8★) + Inception at 9PM", status: "success" });
+      addReasoning({
+        id: "r2", agentId: "research", agentEmoji: "🔍", agentName: "Research Agent", timestamp: "00:08",
+        decision: "Selected La Bella Vita over 12 other options",
+        reasoning: "Ranked by composite score: rating (4.8★ × 0.4) + proximity (0.8mi × 0.3) + availability (tonight × 0.2) + cuisine match (Italian × 0.1). La Bella Vita scored 0.94/1.0, 23% higher than runner-up.",
+        confidence: 92,
+        alternatives: ["Chez Pierre (4.6★, French, 1.2mi)", "Sakura Garden (4.9★, Japanese, 2.5mi — too far)", "Mario's Trattoria (4.5★, Italian, 0.5mi — lower rating)"],
+      });
       playBlip();
     }, 8000);
 
@@ -131,6 +146,13 @@ export function useDemoMode() {
       setCall({ active: true, caller: "Call Agent", receiver: "La Bella Vita", duration: 12, transcript: [], status: "ended" });
       updateAgent("call", { status: "idle", liveText: "", currentTask: "" });
       addTimelineEntry({ id: "t6", timestamp: "00:14", agentId: "call", agentEmoji: "📞", agentName: "Call Agent", description: "Reservation confirmed: 7 PM, table for 2", status: "success" });
+      addReasoning({
+        id: "r3", agentId: "call", agentEmoji: "📞", agentName: "Call Agent", timestamp: "00:14",
+        decision: "Used phone call instead of online booking",
+        reasoning: "La Bella Vita's online reservation system showed 'unavailable' for tonight. Phone call bypasses web availability limits — hosts often hold tables for phone requests. Window table secured that wasn't listed online.",
+        confidence: 88,
+        alternatives: ["OpenTable booking (showed no availability)", "Walk-in (risky, no guarantee)", "Try different restaurant"],
+      });
       playBlip();
     }, 20500);
 
@@ -146,6 +168,13 @@ export function useDemoMode() {
       playTyping();
       updateAgent("negotiation", { status: "speaking", liveText: "Found 15% off dinner with promo code NIGHT15 + $2 off movie tickets on Fandango" });
       addTimelineEntry({ id: "t8", timestamp: "00:18", agentId: "negotiation", agentEmoji: "💰", agentName: "Negotiation Agent", description: "Saved $18.50 with combined deals", status: "success" });
+      addReasoning({
+        id: "r4", agentId: "negotiation", agentEmoji: "💰", agentName: "Negotiation Agent", timestamp: "00:18",
+        decision: "Applied NIGHT15 promo + Fandango discount stack",
+        reasoning: "Cross-referenced 8 coupon databases and 3 cashback platforms. NIGHT15 (15% off) is the highest valid dinner promo — expires tomorrow. Fandango $2 off is stackable with no minimum. Combined savings of $18.50 (16.1% total discount).",
+        confidence: 97,
+        alternatives: ["Groupon deal (12% off, requires prepay)", "Restaurant loyalty program (5% — too low)", "Full price with no discounts"],
+      });
       playBlip();
     }, 23500);
 
@@ -162,6 +191,13 @@ export function useDemoMode() {
       playTyping();
       updateAgent("scheduler", { status: "speaking", liveText: "Itinerary: 7PM Dinner → 8:45PM Travel → 9PM Movie" });
       addTimelineEntry({ id: "t10", timestamp: "00:22", agentId: "scheduler", agentEmoji: "📅", agentName: "Scheduler Agent", description: "Itinerary finalized", status: "success" });
+      addReasoning({
+        id: "r5", agentId: "scheduler", agentEmoji: "📅", agentName: "Scheduler Agent", timestamp: "00:22",
+        decision: "7 PM dinner → 9 PM movie with 15min buffer",
+        reasoning: "Average Italian dinner duration: 75min. Travel time (restaurant → cinema): 12min via car, 18min walking. Selected 7 PM start to allow 105min for dinner + travel, leaving a 15min buffer at the cinema for tickets and seating.",
+        confidence: 91,
+        alternatives: ["6:30 PM dinner (too early, restaurant not peak quality)", "7:30 PM dinner (only 8min buffer — too tight)", "Different movie showtime at 9:30 PM (available but later return)"],
+      });
       playBlip();
 
       playSMS();
@@ -196,7 +232,7 @@ export function useDemoMode() {
       // Fade out ambient after completion
       setTimeout(() => stopAmbient(), 3000);
     }, 31000);
-  }, [resetMission, setDemoMode, setUserInput, delay, setMissionStatus, updateAgent, addTimelineEntry, setCall, addCallTranscript, addSMS, setSummary]);
+  }, [resetMission, setDemoMode, setUserInput, delay, setMissionStatus, updateAgent, addTimelineEntry, setCall, addCallTranscript, addSMS, setSummary, addReasoning]);
 
   const stopDemo = useCallback(() => {
     clearAll();
