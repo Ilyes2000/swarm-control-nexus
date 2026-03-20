@@ -191,6 +191,13 @@ export function useDemoMode() {
       playTyping();
       updateAgent("scheduler", { status: "speaking", liveText: "Itinerary: 7PM Dinner → 8:45PM Travel → 9PM Movie" });
       addTimelineEntry({ id: "t10", timestamp: "00:22", agentId: "scheduler", agentEmoji: "📅", agentName: "Scheduler Agent", description: "Itinerary finalized", status: "success" });
+      addReasoning({
+        id: "r5", agentId: "scheduler", agentEmoji: "📅", agentName: "Scheduler Agent", timestamp: "00:22",
+        decision: "7 PM dinner → 9 PM movie with 15min buffer",
+        reasoning: "Average Italian dinner duration: 75min. Travel time (restaurant → cinema): 12min via car, 18min walking. Selected 7 PM start to allow 105min for dinner + travel, leaving a 15min buffer at the cinema for tickets and seating.",
+        confidence: 91,
+        alternatives: ["6:30 PM dinner (too early, restaurant not peak quality)", "7:30 PM dinner (only 8min buffer — too tight)", "Different movie showtime at 9:30 PM (available but later return)"],
+      });
       playBlip();
 
       playSMS();
