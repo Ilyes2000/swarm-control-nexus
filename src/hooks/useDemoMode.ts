@@ -329,7 +329,7 @@ export function useDemoMode() {
       });
       playMissionComplete();
     }, 12000);
-  }, [clearAll, delay, updateAgent, addTimelineEntry, addReasoning, addSMS, playAgentActivate, playTyping, playBlip, playSMS, playMissionComplete]);
+  }, [clearAll, delay, updateAgent, addTimelineEntry, addReasoning, addSMS]);
 
   const stopDemo = useCallback(() => {
     clearAll();
