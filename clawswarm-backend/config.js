@@ -4,6 +4,7 @@ export function loadConfig() {
     corsOrigin: process.env.CORS_ORIGIN ?? "*",
     simulationDelayMs: Number(process.env.SIMULATION_DELAY_MS ?? 350),
     autoApprovalDelayMs: Number(process.env.AUTO_APPROVAL_DELAY_MS ?? 3000),
+    merchantResponseTimeoutMs: Number(process.env.MERCHANT_RESPONSE_TIMEOUT_MS ?? 30000),
     userPhoneNumber: process.env.USER_PHONE_NUMBER ?? "",
     resembleProjectId: process.env.RESEMBLE_PROJECT_ID ?? "",
     telnyxApiKey: process.env.TELNYX_API_KEY ?? "",

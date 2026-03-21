@@ -58,6 +58,41 @@ function parseClockValue(value) {
   return hours * 60 + minutes;
 }
 
+export function parseMerchantResponseText(raw) {
+  const text = (raw || "").trim();
+  const details = {};
+
+  if (/^(ACCEPT|YES|CONFIRMED|OK)$/i.test(text)) {
+    return { offerType: "accept", text, details };
+  }
+
+  const timeMatch = text.match(/(\d{1,2}:\d{2}\s?(?:AM|PM)?)/i);
+  if (timeMatch) {
+    details.time = timeMatch[1].trim();
+  }
+
+  const discountMatch = text.match(/(\d+)%\s*off/i);
+  if (discountMatch) {
+    details.discount = `${discountMatch[1]}%`;
+  }
+
+  const promoMatch = text.match(/\bcode\s+([A-Z0-9]+)/i);
+  if (promoMatch) {
+    details.promoCode = promoMatch[1];
+    return { offerType: "promo", text, details };
+  }
+
+  if (/complimentary|quiet|off[\s-]?peak/i.test(text)) {
+    return { offerType: "offpeak", text, details };
+  }
+
+  if (details.time || details.discount) {
+    return { offerType: "counter", text, details };
+  }
+
+  return { offerType: "counter", text, details };
+}
+
 export class MissionOrchestrator {
   constructor({ config, emitEvent }) {
     this.config = config;
@@ -68,11 +103,15 @@ export class MissionOrchestrator {
     this.clawdtalkClient = createClawdtalkClient(config);
     this.state = createInitialMissionState();
     this.sequenceNumber = 0;
+    this.merchantOfferIndex = 0;
     this.currentRunId = 0;
     this.currentController = null;
     this.currentRunPromise = null;
     this.pendingApprovalResolver = null;
     this.pendingApprovalTimer = null;
+    this.pendingMerchantResolver = null;
+    this.pendingMerchantTimer = null;
+    this.pendingMerchantVenue = null;
   }
 
   getState() {
@@ -130,6 +169,18 @@ export class MissionOrchestrator {
   addSms(message) {
     this.state.smsLog.push(message);
     this.broadcast("sms", message);
+  }
+
+  addMerchantOffer(offer) {
+    this.state.merchantOffers.push(offer);
+    this.broadcast("merchant_offer", offer);
+  }
+
+  updateMerchantOffer(id, updates) {
+    this.state.merchantOffers = this.state.merchantOffers.map((o) =>
+      o.id === id ? { ...o, ...updates } : o
+    );
+    this.broadcast("merchant_offer_update", { id, updates });
   }
 
   setSummary(summary) {
@@ -215,6 +266,13 @@ export class MissionOrchestrator {
       this.pendingApprovalTimer = null;
     }
     this.pendingApprovalResolver = null;
+    if (this.pendingMerchantTimer) {
+      clearTimeout(this.pendingMerchantTimer);
+      this.pendingMerchantTimer = null;
+    }
+    this.pendingMerchantResolver = null;
+    this.pendingMerchantVenue = null;
+    this.merchantOfferIndex = 0;
 
     this.state = createInitialMissionState();
     this.currentController = null;
@@ -338,6 +396,105 @@ export class MissionOrchestrator {
     if (resolver) {
       resolver(resolution);
     }
+  }
+
+  resolvePendingMerchant(response) {
+    if (this.pendingMerchantTimer) {
+      clearTimeout(this.pendingMerchantTimer);
+      this.pendingMerchantTimer = null;
+    }
+    const resolver = this.pendingMerchantResolver;
+    this.pendingMerchantResolver = null;
+    this.pendingMerchantVenue = null;
+    if (resolver) {
+      resolver(response);
+    }
+  }
+
+  async awaitMerchantResponse({ signal, mode, venueName, venuePhone, merchantSmsText }) {
+    if (mode === "simulation") {
+      return this.simulateMerchantResponse(signal, venueName);
+    }
+
+    if (!venuePhone) {
+      this.addTimelineEntry({
+        id: this.nextId("timeline"),
+        timestamp: nowLabel(),
+        agentId: "negotiation",
+        agentEmoji: "⚠️",
+        agentName: "Merchant",
+        description: `No phone number for ${venueName} — auto-accepting.`,
+        status: "success"
+      });
+      return { offerType: "accept", text: "Auto-accepted (no merchant phone)", details: {}, autoAccepted: true };
+    }
+
+    try {
+      await this.smsClient.sendMessage({ to: venuePhone, text: merchantSmsText });
+    } catch (err) {
+      this.addTimelineEntry({
+        id: this.nextId("timeline"),
+        timestamp: nowLabel(),
+        agentId: "negotiation",
+        agentEmoji: "⚠️",
+        agentName: "Merchant",
+        description: `Failed to SMS ${venueName} — auto-accepting.`,
+        status: "success"
+      });
+      return { offerType: "accept", text: "Auto-accepted (SMS send failed)", details: {}, autoAccepted: true };
+    }
+
+    this.addSms({
+      id: this.nextId("sms"),
+      from: "ClawSwarm",
+      text: `To ${venueName}: ${merchantSmsText}`,
+      timestamp: nowLabel(),
+      direction: "sent"
+    });
+
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        if (this.pendingMerchantTimer) {
+          clearTimeout(this.pendingMerchantTimer);
+          this.pendingMerchantTimer = null;
+        }
+        this.pendingMerchantResolver = null;
+        this.pendingMerchantVenue = null;
+        signal.removeEventListener("abort", onAbort);
+      };
+
+      const finish = (result) => {
+        cleanup();
+        resolve(result);
+      };
+
+      const onAbort = () => {
+        cleanup();
+        reject(createAbortError());
+      };
+
+      this.pendingMerchantResolver = finish;
+      this.pendingMerchantVenue = venueName;
+      signal.addEventListener("abort", onAbort, { once: true });
+
+      this.pendingMerchantTimer = setTimeout(() => {
+        this.addTimelineEntry({
+          id: this.nextId("timeline"),
+          timestamp: nowLabel(),
+          agentId: "negotiation",
+          agentEmoji: "⏱️",
+          agentName: "Merchant",
+          description: `${venueName} did not respond — auto-accepting.`,
+          status: "success"
+        });
+        finish({
+          offerType: "accept",
+          text: "Auto-accepted after timeout",
+          details: {},
+          autoAccepted: true
+        });
+      }, this.config.merchantResponseTimeoutMs ?? 30000);
+    });
   }
 
   async awaitApprovalDecision({ signal, mode, approvalRequest, smsText, autoApproveInSimulation = false }) {
@@ -969,7 +1126,91 @@ export class MissionOrchestrator {
       status: "ended"
     });
 
+    // --- Merchant response flow ---
+    const merchantSmsText = `ClawSwarm booking request: ${reservationLine} Reply ACCEPT or counter-offer.`;
+    if (mode === "simulation") {
+      this.addSms({
+        id: this.nextId("sms"),
+        from: "ClawSwarm",
+        text: `To ${targetName}: ${merchantSmsText}`,
+        timestamp: nowLabel(),
+        direction: "sent"
+      });
+    }
+    const merchantResponse = await this.awaitMerchantResponse({
+      signal, mode, venueName: targetName, venuePhone: targetPhone, merchantSmsText
+    });
+
+    const merchantOffer = {
+      id: this.nextId("merchant-offer"),
+      venueName: targetName,
+      offerType: merchantResponse.offerType,
+      originalRequest: reservationLine,
+      merchantResponse: merchantResponse.text,
+      details: merchantResponse.details || {},
+      status: "pending",
+      timestamp: nowLabel()
+    };
+    this.addMerchantOffer(merchantOffer);
+
+    this.addTimelineEntry({
+      id: this.nextId("timeline"),
+      timestamp: nowLabel(),
+      agentId: "negotiation",
+      agentEmoji: "🏪",
+      agentName: "Merchant",
+      description: `${targetName} responded: ${merchantResponse.text}`,
+      status: merchantResponse.offerType === "accept" ? "success" : "pending"
+    });
+
     let shouldFinalizeBooking = true;
+
+    if (merchantResponse.offerType !== "accept") {
+      this.updateAgent("negotiation", {
+        status: "thinking",
+        listeningTo: null,
+        currentTask: `Evaluating ${targetName}'s counter-offer`,
+        liveText: `Reviewing merchant response: ${merchantResponse.text}`,
+        confidence: 70
+      });
+      await this.waitStep(signal, 0.5);
+
+      const negotiationResult = await runNegotiatorAgent({
+        researchResult: null,
+        llm: this.llm,
+        merchantOffer
+      });
+
+      this.updateAgent("negotiation", {
+        status: "speaking",
+        liveText: negotiationResult.liveText,
+        confidence: negotiationResult.confidence
+      });
+
+      this.addReasoning({
+        id: this.nextId("reasoning"),
+        agentId: "negotiation",
+        agentEmoji: "💰",
+        agentName: "Negotiation Agent",
+        decision: `${negotiationResult.action === "accept" ? "Accepted" : negotiationResult.action === "reject" ? "Rejected" : "Countered"} ${targetName}'s offer.`,
+        reasoning: negotiationResult.reasoning,
+        confidence: negotiationResult.confidence,
+        alternatives: ["Accept original terms", "Reject and try another venue"],
+        sources: [{ label: "Merchant SMS", type: "sms", freshness: "live", verified: true }],
+        timestamp: nowLabel()
+      });
+
+      this.updateMerchantOffer(merchantOffer.id, { status: negotiationResult.action === "accept" ? "accepted" : negotiationResult.action === "reject" ? "rejected" : "countered" });
+
+      if (negotiationResult.action === "reject") {
+        shouldFinalizeBooking = false;
+      }
+
+      await this.waitStep(signal, 0.5);
+      this.updateAgent("negotiation", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+    } else {
+      this.updateMerchantOffer(merchantOffer.id, { status: "accepted" });
+    }
 
     if (this.state.autonomyMode === "confirm") {
       this.addTimelineEntry({
@@ -1103,6 +1344,58 @@ export class MissionOrchestrator {
       timestamp: nowLabel()
     });
     return true;
+  }
+
+  async simulateMerchantResponse(signal, venueName) {
+    await this.waitStep(signal, 1);
+    const responses = [
+      { offerType: "accept", text: "Confirmed! Table for two is reserved.", details: {} },
+      { offerType: "counter", text: "That slot is full. We can do 8:00 PM instead at 10% off.", details: { time: "8:00 PM", discount: "10%" } },
+      { offerType: "offpeak", text: "Quiet table at 6:15 PM with complimentary appetizer.", details: { time: "6:15 PM", note: "Complimentary appetizer included" } },
+      { offerType: "promo", text: "Tonight's special: 25% off prix fixe, code CLAWVIP.", details: { discount: "25%", promoCode: "CLAWVIP" } }
+    ];
+    const index = this.merchantOfferIndex;
+    this.merchantOfferIndex = (this.merchantOfferIndex + 1) % 4;
+    return responses[index];
+  }
+
+  async handleInboundMerchantSms(message) {
+    const parsed = parseMerchantResponseText(message.text);
+
+    this.addSms({
+      id: this.nextId("sms"),
+      from: message.from || "Merchant",
+      text: message.text,
+      timestamp: nowLabel(),
+      direction: "received"
+    });
+
+    const sender = message.from || "Merchant";
+    if (this.pendingMerchantResolver && (!this.pendingMerchantVenue || this.pendingMerchantVenue === sender)) {
+      this.addTimelineEntry({
+        id: this.nextId("timeline"),
+        timestamp: nowLabel(),
+        agentId: "negotiation",
+        agentEmoji: "🏪",
+        agentName: "Merchant",
+        description: `${this.pendingMerchantVenue || sender} replied: ${message.text}`,
+        status: parsed.offerType === "accept" ? "success" : "pending"
+      });
+      this.resolvePendingMerchant(parsed);
+      return;
+    }
+
+    const offer = {
+      id: this.nextId("merchant-offer"),
+      venueName: message.from || "Merchant",
+      offerType: parsed.offerType,
+      originalRequest: "Booking request",
+      merchantResponse: message.text,
+      details: parsed.details,
+      status: "pending",
+      timestamp: nowLabel()
+    };
+    this.addMerchantOffer(offer);
   }
 
   async runInterrupt({ command, mode, signal }) {

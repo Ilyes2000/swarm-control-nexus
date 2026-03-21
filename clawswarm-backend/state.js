@@ -28,6 +28,7 @@ export function createInitialMissionState() {
       status: "ended"
     },
     smsLog: [],
+    merchantOffers: [],
     summary: {
       visible: false,
       result: "",

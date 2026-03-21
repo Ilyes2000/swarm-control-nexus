@@ -3,6 +3,7 @@ import type {
   Agent,
   ApprovalRequest,
   CallState,
+  MerchantOffer,
   MemoryEntry,
   MissionState,
   MissionSummary,
@@ -32,6 +33,8 @@ export interface MissionEventActions {
   setDemoMode: (enabled: boolean) => void;
   setUserInput: (input: string) => void;
   setPendingApproval: (request: ApprovalRequest | null) => void;
+  addMerchantOffer: (offer: MerchantOffer) => void;
+  updateMerchantOffer: (id: string, updates: Partial<MerchantOffer>) => void;
 }
 
 export interface MissionEventMap {
@@ -51,6 +54,8 @@ export interface MissionEventMap {
   training_mode: { enabled: boolean };
   approval_request: ApprovalRequest;
   approval_cleared: { id?: string | null };
+  merchant_offer: MerchantOffer;
+  merchant_offer_update: { id: string; updates: Partial<MerchantOffer> };
   error: { message: string; detail?: string };
 }
 
@@ -114,6 +119,12 @@ export function applyMissionEvent(event: MissionEvent, actions: MissionEventActi
       break;
     case "approval_cleared":
       actions.setPendingApproval(null);
+      break;
+    case "merchant_offer":
+      actions.addMerchantOffer(event.payload);
+      break;
+    case "merchant_offer_update":
+      actions.updateMerchantOffer(event.payload.id, event.payload.updates);
       break;
     case "error":
       break;

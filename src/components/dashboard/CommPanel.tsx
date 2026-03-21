@@ -1,4 +1,5 @@
 import { LiveCallView } from "./LiveCallView";
+import { MerchantOffers } from "./MerchantOffers";
 import { SMSLog } from "./SMSLog";
 
 export function CommPanel() {
@@ -8,6 +9,7 @@ export function CommPanel() {
         Communications
       </h2>
       <LiveCallView />
+      <MerchantOffers />
       <SMSLog />
     </div>
   );

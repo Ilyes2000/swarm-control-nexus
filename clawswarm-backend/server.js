@@ -82,6 +82,16 @@ app.post("/api/webhooks/telnyx/sms", async (req, res) => {
   }
 });
 
+app.post("/api/webhooks/telnyx/merchant-sms", async (req, res) => {
+  try {
+    const parsed = telnyxSmsClient.parseInboundWebhook(req.body);
+    await orchestrator.handleInboundMerchantSms(parsed);
+    res.status(202).json({ ok: true });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Invalid webhook payload" });
+  }
+});
+
 server.listen(config.port, () => {
   console.log(`ClawSwarm backend listening on http://127.0.0.1:${config.port}`);
 });

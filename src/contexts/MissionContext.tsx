@@ -105,6 +105,25 @@ export interface OptimizationData {
   tradeoffs: { label: string; original: string; optimized: string }[];
 }
 
+export type MerchantOfferType = "accept" | "counter" | "offpeak" | "promo";
+
+export interface MerchantOffer {
+  id: string;
+  venueName: string;
+  offerType: MerchantOfferType;
+  originalRequest: string;
+  merchantResponse: string;
+  details: {
+    time?: string;
+    price?: string;
+    discount?: string;
+    promoCode?: string;
+    note?: string;
+  };
+  status: "pending" | "accepted" | "rejected" | "countered";
+  timestamp: string;
+}
+
 export interface MissionSummary {
   visible: boolean;
   result: string;
@@ -140,6 +159,7 @@ export interface MissionState {
   timeline: TimelineEntry[];
   call: CallState;
   smsLog: SMSMessage[];
+  merchantOffers: MerchantOffer[];
   summary: MissionSummary;
   reasoning: ReasoningEntry[];
   memory: MemoryEntry[];
@@ -161,6 +181,8 @@ interface MissionContextType extends MissionState {
   setCall: (call: CallState) => void;
   addCallTranscript: (speaker: string, text: string) => void;
   addSMS: (msg: SMSMessage) => void;
+  addMerchantOffer: (offer: MerchantOffer) => void;
+  updateMerchantOffer: (id: string, updates: Partial<MerchantOffer>) => void;
   setSummary: (s: MissionSummary) => void;
   addReasoning: (entry: ReasoningEntry) => void;
   addMemory: (entry: MemoryEntry) => void;
@@ -209,6 +231,7 @@ export function createInitialMissionState(): MissionState {
     timeline: [],
     call: { ...defaultCall, transcript: [] },
     smsLog: [],
+    merchantOffers: [],
     summary: { ...defaultSummary, costBreakdown: [] },
     reasoning: [],
     memory: [],
@@ -237,6 +260,7 @@ function normalizeMissionState(state: Partial<MissionState>): MissionState {
       transcript: state.call?.transcript ?? base.call.transcript,
     },
     smsLog: state.smsLog ?? base.smsLog,
+    merchantOffers: state.merchantOffers ?? base.merchantOffers,
     summary: {
       ...base.summary,
       ...state.summary,
@@ -296,6 +320,17 @@ export function MissionProvider({ children }: { children: ReactNode }) {
 
   const addSMS = useCallback((msg: SMSMessage) => {
     setState((s) => ({ ...s, smsLog: [...s.smsLog, msg] }));
+  }, []);
+
+  const addMerchantOffer = useCallback((offer: MerchantOffer) => {
+    setState((s) => ({ ...s, merchantOffers: [...s.merchantOffers, offer] }));
+  }, []);
+
+  const updateMerchantOffer = useCallback((id: string, updates: Partial<MerchantOffer>) => {
+    setState((s) => ({
+      ...s,
+      merchantOffers: s.merchantOffers.map((o) => (o.id === id ? { ...o, ...updates } : o)),
+    }));
   }, []);
 
   const setSummary = useCallback((summary: MissionSummary) => {
@@ -367,7 +402,8 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     <MissionContext.Provider
       value={{
         ...state, setMissionStatus, updateAgent, addTimelineEntry, updateTimelineEntry,
-        setCall, addCallTranscript, addSMS, setSummary, addReasoning, addMemory,
+        setCall, addCallTranscript, addSMS, addMerchantOffer, updateMerchantOffer,
+        setSummary, addReasoning, addMemory,
         addSkill, updateSkillUsage, addAdaptation, setTrainingMode,
         setDemoMode, setUserInput, setAutonomyMode, setAutonomyConstraints,
         setPendingApproval, hydrateMission, resetMission,
