@@ -244,10 +244,10 @@ export function useMissionRuntime() {
   }, []);
 
   const startMission = useCallback(
-    async (missionText: string, mode: MissionMode) => {
+    async (missionText: string, mode: MissionMode, productArea?: "study" | "concierge") => {
       const trimmedMission = missionText.trim();
       if (!trimmedMission) {
-        toast.error("Enter a study mission before starting.");
+        toast.error("Enter a mission before starting.");
         return;
       }
 
@@ -260,6 +260,7 @@ export function useMissionRuntime() {
         await postJson("/api/mission/start", {
           missionText: trimmedMission,
           mode,
+          productArea,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unable to start mission.";

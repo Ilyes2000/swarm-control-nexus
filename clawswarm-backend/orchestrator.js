@@ -2,12 +2,18 @@ import { createInitialMissionState, cloneState } from "./state.js";
 import { createEvent } from "./protocol.js";
 import { createLlmGateway } from "./integrations/llm.js";
 import { createTelnyxSmsClient } from "./integrations/telnyx-sms.js";
+import { createClawdtalkClient } from "./integrations/clawdtalk.js";
+import { createResembleClient } from "./integrations/resemble.js";
 import { runPlannerAgent } from "./agents/planner.js";
 import { runTutorAgent } from "./agents/tutor.js";
 import { runSolverAgent } from "./agents/solver.js";
 import { runProofAgent } from "./agents/proof.js";
 import { runRevisionAgent } from "./agents/revision.js";
 import { runCoachAgent } from "./agents/coach.js";
+import { runResearchAgent } from "./agents/research.js";
+import { runNegotiatorAgent } from "./agents/negotiator.js";
+import { runSchedulerAgent } from "./agents/scheduler.js";
+import { runCallerAgent } from "./agents/caller.js";
 
 function createAbortError() {
   return new Error("Mission run aborted");
@@ -20,6 +26,18 @@ function nowLabel() {
   });
 }
 
+function detectMissionDomain({ missionText, productArea }) {
+  if (productArea === "study" || productArea === "concierge") {
+    return productArea;
+  }
+
+  const normalized = String(missionText ?? "").toLowerCase();
+  if (/(restaurant|dinner|movie|reservation|date night|tickets|cinema|table|booking|venue|outfit|trip|flight|hotel)/i.test(normalized)) {
+    return "concierge";
+  }
+  return "study";
+}
+
 export class MissionOrchestrator {
   constructor({ config, emitEvent, studyStore }) {
     this.config = config;
@@ -27,11 +45,14 @@ export class MissionOrchestrator {
     this.studyStore = studyStore;
     this.llm = createLlmGateway(config);
     this.smsClient = createTelnyxSmsClient(config);
+    this.clawdtalk = createClawdtalkClient(config);
+    this.resemble = createResembleClient(config);
     this.state = createInitialMissionState();
     this.sequenceNumber = 0;
     this.currentRunId = 0;
     this.currentController = null;
     this.currentRunPromise = null;
+    this.currentMissionDomain = "study";
   }
 
   getState() {
@@ -177,6 +198,7 @@ export class MissionOrchestrator {
     this.state = createInitialMissionState();
     this.currentController = null;
     this.currentRunPromise = null;
+    this.currentMissionDomain = "study";
 
     if (broadcast) {
       this.broadcastSnapshot();
@@ -184,7 +206,7 @@ export class MissionOrchestrator {
     }
   }
 
-  async startMission({ missionText, mode = "live" }) {
+  async startMission({ missionText, mode = "live", productArea }) {
     if (!missionText?.trim()) {
       throw new Error("missionText is required");
     }
@@ -194,13 +216,15 @@ export class MissionOrchestrator {
     this.currentController = new AbortController();
     const signal = this.currentController.signal;
     const runId = this.currentRunId;
+    const missionDomain = detectMissionDomain({ missionText, productArea });
+    this.currentMissionDomain = missionDomain;
 
     this.state.userInput = missionText.trim();
     this.state.demoMode = mode === "simulation";
     this.broadcastSnapshot();
     this.setMissionStatus("live", mode);
 
-    this.currentRunPromise = this.runMission({ missionText: missionText.trim(), mode, signal })
+    this.currentRunPromise = this.runMission({ missionText: missionText.trim(), mode, signal, productArea: missionDomain })
       .catch((error) => {
         if (signal.aborted) {
           return;
@@ -225,7 +249,7 @@ export class MissionOrchestrator {
         }
       });
 
-    return { ok: true, mode };
+    return { ok: true, mode, productArea: missionDomain };
   }
 
   async interruptMission({ command }) {
@@ -301,7 +325,11 @@ export class MissionOrchestrator {
     });
   }
 
-  async runMission({ missionText, mode, signal }) {
+  async runMission({ missionText, mode, signal, productArea = "study" }) {
+    if (productArea === "concierge") {
+      return this.runConciergeMission({ missionText, mode, signal });
+    }
+
     const planningContext = this.studyStore.getPlanningContext({ missionText });
 
     this.addMemory({
@@ -706,6 +734,336 @@ export class MissionOrchestrator {
     this.setMissionStatus("completed", mode);
   }
 
+  async runConciergeMission({ missionText, mode, signal }) {
+    this.addMemory({
+      id: this.nextId("memory"),
+      agentId: "planner",
+      type: "preference",
+      label: "Concierge mission request",
+      value: missionText,
+      timestamp: "captured"
+    });
+
+    this.updateAgent("planner", {
+      status: "thinking",
+      currentTask: "Decomposing the outing mission",
+      liveText: "Breaking the request into research, booking, savings, and itinerary steps.",
+      confidence: 82
+    });
+    const plannerTimelineId = this.nextId("timeline");
+    this.addTimelineEntry({
+      id: plannerTimelineId,
+      timestamp: nowLabel(),
+      agentId: "planner",
+      agentEmoji: "🧠",
+      agentName: "Planner Agent",
+      description: `Analyzing concierge mission: ${missionText}`,
+      status: "pending"
+    });
+    await this.waitStep(signal, 1);
+
+    const plannerLiveText = await this.llm.generateText({
+      system: "Summarize a concierge mission plan in one sentence.",
+      prompt: `Mission: ${missionText}`,
+      fallback: "Created a four-step concierge plan: research venues, confirm reservations, optimize cost, and lock the itinerary."
+    });
+    const conciergeTasks = [
+      { title: "Research best-fit restaurant", step: "research", due: "Now" },
+      { title: "Confirm reservation by phone", step: "call", due: "Immediately after research" },
+      { title: "Apply savings and discounts", step: "negotiation", due: "Before checkout" },
+      { title: "Finalize itinerary and confirmations", step: "scheduler", due: "Before sending plan" }
+    ];
+    this.broadcast("plan_generated", {
+      missionId: `concierge-${Date.now()}`,
+      title: "Concierge Mission",
+      focusAreas: ["Restaurant fit", "Booking", "Cost optimization", "Timing"]
+    });
+    conciergeTasks.forEach((task) => this.broadcast("task_created", task));
+
+    this.updateAgent("planner", {
+      status: "speaking",
+      currentTask: "Publishing concierge task graph",
+      liveText: plannerLiveText,
+      confidence: 94
+    });
+    this.updateTimelineEntry(plannerTimelineId, { status: "success" });
+    this.addReasoning({
+      id: this.nextId("reasoning"),
+      agentId: "planner",
+      agentEmoji: "🧠",
+      agentName: "Planner Agent",
+      decision: "Split the request into research, booking, savings, and scheduling.",
+      reasoning: "A dinner-and-booking style mission works best when venue quality is verified first, booking is confirmed second, then cost optimization and final itinerary happen against real availability.",
+      confidence: 94,
+      alternatives: ["Book the first available venue", "Negotiate before availability is confirmed"],
+      timestamp: nowLabel()
+    });
+    await this.waitStep(signal, 1);
+    this.updateAgent("planner", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+
+    this.updateAgent("research", {
+      status: "thinking",
+      currentTask: "Searching venues",
+      liveText: "Comparing restaurant fit, distance, and showtime compatibility.",
+      confidence: 71
+    });
+    const researchTimelineId = this.nextId("timeline");
+    this.addTimelineEntry({
+      id: researchTimelineId,
+      timestamp: nowLabel(),
+      agentId: "research",
+      agentEmoji: "🔍",
+      agentName: "Research Agent",
+      description: "Searching venues and entertainment options.",
+      status: "pending"
+    });
+    await this.waitStep(signal, 1);
+
+    const researchResult = await runResearchAgent({ missionText, llm: this.llm });
+    this.updateAgent("research", {
+      status: "speaking",
+      currentTask: "Publishing ranked options",
+      liveText: researchResult.liveText,
+      confidence: researchResult.confidence
+    });
+    this.updateTimelineEntry(researchTimelineId, { status: researchResult.usedFallback ? "fallback" : "success" });
+    this.addReasoning({
+      id: this.nextId("reasoning"),
+      agentId: "research",
+      agentEmoji: "🔍",
+      agentName: "Research Agent",
+      decision: `Selected ${researchResult.restaurant.name} and ${researchResult.cinema.name}.`,
+      reasoning: researchResult.reasoning,
+      confidence: researchResult.confidence,
+      alternatives: [`Different restaurant`, `${researchResult.cinema.movieTitle} at another cinema`],
+      timestamp: nowLabel()
+    });
+    this.addMemory({
+      id: this.nextId("memory"),
+      agentId: "research",
+      type: "context",
+      label: "Selected venue pair",
+      value: `${researchResult.restaurant.name} + ${researchResult.cinema.movieTitle} at ${researchResult.cinema.name}`,
+      timestamp: nowLabel()
+    });
+    await this.waitStep(signal, 0.75);
+    this.updateAgent("research", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+
+    this.updateAgent("call", {
+      status: "calling",
+      currentTask: `Calling ${researchResult.restaurant.name}`,
+      liveText: "Requesting a reservation using the concierge voice workflow.",
+      confidence: 78
+    });
+    const callTimelineId = this.nextId("timeline");
+    this.addTimelineEntry({
+      id: callTimelineId,
+      timestamp: nowLabel(),
+      agentId: "call",
+      agentEmoji: "📞",
+      agentName: "Call Agent",
+      description: `Calling ${researchResult.restaurant.name} to confirm the reservation.`,
+      status: "pending"
+    });
+    this.setCall({
+      active: true,
+      caller: "Call Agent",
+      receiver: researchResult.restaurant.name,
+      duration: 0,
+      transcript: [],
+      status: "ringing"
+    });
+    await this.waitStep(signal, 0.5);
+
+    const callResult = await runCallerAgent({
+      businessName: researchResult.restaurant.name,
+      businessPhone: researchResult.restaurant.phone,
+      reservationLine: `Hi, I'd like to book a table for two tonight around ${researchResult.restaurant.reservationTime}.`,
+      mode,
+      clawdtalk: this.clawdtalk,
+      resemble: this.resemble,
+      missionVoiceName: this.config.missionVoiceName
+    });
+    this.setCall({
+      active: true,
+      caller: "Call Agent",
+      receiver: researchResult.restaurant.name,
+      duration: 1,
+      transcript: [],
+      status: "connected"
+    });
+    for (const [index, line] of callResult.transcript.entries()) {
+      await this.waitStep(signal, 0.25);
+      this.addCallTranscript(line.speaker, line.text);
+      this.setCall({
+        ...this.state.call,
+        active: true,
+        caller: "Call Agent",
+        receiver: researchResult.restaurant.name,
+        duration: 2 + index,
+        status: "connected"
+      });
+    }
+    this.setCall({
+      active: true,
+      caller: "Call Agent",
+      receiver: researchResult.restaurant.name,
+      duration: callResult.transcript.length + 2,
+      transcript: [],
+      status: "ended"
+    });
+    this.updateAgent("call", {
+      status: "speaking",
+      currentTask: "Reservation confirmed",
+      liveText: `${researchResult.restaurant.name} confirmed ${researchResult.restaurant.reservationTime} for two.`,
+      confidence: 91
+    });
+    this.updateTimelineEntry(callTimelineId, { status: "success" });
+    this.addReasoning({
+      id: this.nextId("reasoning"),
+      agentId: "call",
+      agentEmoji: "📞",
+      agentName: "Call Agent",
+      decision: "Used the voice-call workflow to secure the reservation.",
+      reasoning: "Phone confirmation can outperform web booking when availability is changing in real time or when a host can manually hold a table.",
+      confidence: 91,
+      alternatives: ["Try online booking only", "Switch venues immediately"],
+      timestamp: nowLabel()
+    });
+    await this.waitStep(signal, 0.75);
+    this.updateAgent("call", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+
+    this.updateAgent("negotiation", {
+      status: "thinking",
+      currentTask: "Optimizing spend",
+      liveText: "Looking for stackable discounts and cleaner checkout options.",
+      confidence: 74
+    });
+    const negotiationTimelineId = this.nextId("timeline");
+    this.addTimelineEntry({
+      id: negotiationTimelineId,
+      timestamp: nowLabel(),
+      agentId: "negotiation",
+      agentEmoji: "💰",
+      agentName: "Negotiation Agent",
+      description: "Checking discounts and savings opportunities.",
+      status: "pending"
+    });
+    await this.waitStep(signal, 1);
+
+    const negotiationResult = await runNegotiatorAgent({ researchResult, llm: this.llm });
+    this.updateAgent("negotiation", {
+      status: "speaking",
+      currentTask: "Publishing savings plan",
+      liveText: negotiationResult.liveText,
+      confidence: negotiationResult.confidence
+    });
+    this.updateTimelineEntry(negotiationTimelineId, { status: "success" });
+    this.addReasoning({
+      id: this.nextId("reasoning"),
+      agentId: "negotiation",
+      agentEmoji: "💰",
+      agentName: "Negotiation Agent",
+      decision: `Reduced projected spend by $${negotiationResult.savings.totalSavings.toFixed(2)}.`,
+      reasoning: negotiationResult.reasoning,
+      confidence: negotiationResult.confidence,
+      alternatives: ["Skip discounts for speed", "Use one-time prepay deal"],
+      timestamp: nowLabel()
+    });
+    await this.waitStep(signal, 0.75);
+    this.updateAgent("negotiation", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+
+    this.updateAgent("scheduler", {
+      status: "thinking",
+      currentTask: "Finalizing itinerary",
+      liveText: "Sequencing dinner, travel, and showtime into one clean plan.",
+      confidence: 82
+    });
+    const schedulerTimelineId = this.nextId("timeline");
+    this.addTimelineEntry({
+      id: schedulerTimelineId,
+      timestamp: nowLabel(),
+      agentId: "scheduler",
+      agentEmoji: "📅",
+      agentName: "Scheduler Agent",
+      description: "Building the final itinerary and confirmations.",
+      status: "pending"
+    });
+    await this.waitStep(signal, 1);
+
+    const schedulerResult = await runSchedulerAgent({ researchResult, negotiationResult, llm: this.llm });
+    const summary = {
+      ...schedulerResult.summary,
+      missionTitle: "Concierge Mission Ready",
+      metrics: [
+        { label: "Restaurant", value: researchResult.restaurant.name, tone: "info" },
+        { label: "Movie", value: researchResult.cinema.movieTitle, tone: "info" },
+        { label: "Savings", value: `$${negotiationResult.savings.totalSavings.toFixed(2)}`, tone: "success" },
+        { label: "Confidence", value: `${schedulerResult.confidence}%`, tone: "success" }
+      ],
+      nextActions: [
+        `Arrive at ${researchResult.restaurant.name} by ${researchResult.restaurant.reservationTime}.`,
+        `Keep the cinema transfer window intact before ${researchResult.cinema.showtime}.`,
+        "Reply MODIFY if timing, venue, or budget constraints change."
+      ],
+      focusAreas: [researchResult.restaurant.name, researchResult.cinema.movieTitle],
+      readinessScore: schedulerResult.confidence,
+      riskLevel: "low"
+    };
+
+    this.updateAgent("scheduler", {
+      status: "speaking",
+      currentTask: "Publishing itinerary",
+      liveText: schedulerResult.liveText,
+      confidence: schedulerResult.confidence
+    });
+    this.updateTimelineEntry(schedulerTimelineId, { status: "success" });
+    this.addReasoning({
+      id: this.nextId("reasoning"),
+      agentId: "scheduler",
+      agentEmoji: "📅",
+      agentName: "Scheduler Agent",
+      decision: "Locked the venue sequence and buffer windows.",
+      reasoning: `Itinerary locked: ${schedulerResult.itinerary}.`,
+      confidence: schedulerResult.confidence,
+      alternatives: ["Tighter transition with less buffer", "Later showtime with a slower return"],
+      timestamp: nowLabel()
+    });
+    this.addSkill({
+      id: this.nextId("skill"),
+      title: "Phone-over-web reservation strategy",
+      description: "Escalate to a call when availability is dynamic or web inventory looks artificially constrained.",
+      source: "Concierge booking flow",
+      version: 1,
+      usageCount: 1,
+      createdAt: nowLabel(),
+      agentId: "call"
+    });
+    this.setSummary(summary);
+    await this.sendUserSms(`Concierge mission ready. ${summary.result} Saved $${negotiationResult.savings.totalSavings.toFixed(2)}. Reply CONFIRM or MODIFY.`);
+
+    this.addAdaptation({
+      id: this.nextId("adaptation"),
+      message: researchResult.usedFallback
+        ? "Research used a fallback source and still completed the concierge mission."
+        : "Concierge mission completed with venue research, booking, and savings optimization aligned.",
+      timestamp: nowLabel(),
+      type: researchResult.usedFallback ? "learning" : "improving"
+    });
+    this.addTimelineEntry({
+      id: this.nextId("timeline"),
+      timestamp: nowLabel(),
+      agentId: "planner",
+      agentEmoji: "✅",
+      agentName: "Planner Agent",
+      description: "Concierge mission completed successfully.",
+      status: "success"
+    });
+    await this.waitStep(signal, 0.5);
+    this.updateAgent("scheduler", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+    this.setMissionStatus("completed", mode);
+  }
+
   async runInterrupt({ command, mode, signal }) {
     this.addTimelineEntry({
       id: this.nextId("timeline"),
@@ -723,6 +1081,41 @@ export class MissionOrchestrator {
       confidence: 84
     });
     await this.waitStep(signal, 1);
+
+    if (this.currentMissionDomain === "concierge") {
+      this.broadcast("mission_replanned", {
+        command,
+        domain: "concierge"
+      });
+      this.addReasoning({
+        id: this.nextId("reasoning"),
+        agentId: "planner",
+        agentEmoji: "🧠",
+        agentName: "Planner Agent",
+        decision: "Accepted the concierge override and collapsed the next step into a smaller adjustment.",
+        reasoning: "Concierge missions should adapt without throwing away venue research or confirmed reservations when a new preference arrives mid-run.",
+        confidence: 88,
+        alternatives: ["Restart the whole outing plan", "Ignore the new constraint"],
+        timestamp: nowLabel()
+      });
+      this.addAdaptation({
+        id: this.nextId("adaptation"),
+        message: `Concierge mission adapted after interrupt: ${command}`,
+        timestamp: nowLabel(),
+        type: "evolved"
+      });
+      this.updateAgent("planner", {
+        status: "speaking",
+        currentTask: "Publishing concierge adjustment",
+        liveText: `Updated the concierge mission to honor: ${command}`,
+        confidence: 91
+      });
+      await this.waitStep(signal, 1);
+      this.updateAgent("planner", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+      await this.sendUserSms(`Concierge plan updated. New constraint noted: ${command}.`);
+      this.setMissionStatus("completed", mode);
+      return;
+    }
 
     const followUpTask = this.studyStore.replanMission(command);
     this.broadcast("mission_replanned", {

@@ -286,7 +286,8 @@ app.post("/api/mission/start", async (req, res) => {
   try {
     const result = await orchestrator.startMission({
       missionText: req.body?.missionText,
-      mode: parseMode(req.body?.mode)
+      mode: parseMode(req.body?.mode),
+      productArea: req.body?.productArea
     });
     res.status(202).json(result);
   } catch (error) {

@@ -4,7 +4,11 @@ const personalities = {
   solver: { color: "green", trait: "Precise & Analytical", tone: "Direct", riskTolerance: "medium" },
   proof: { color: "amber", trait: "Rigorous & Formal", tone: "Scholarly", riskTolerance: "low" },
   revision: { color: "blue", trait: "Systematic & Retentive", tone: "Calm", riskTolerance: "medium" },
-  coach: { color: "purple", trait: "Motivating & Protective", tone: "Encouraging", riskTolerance: "medium" }
+  coach: { color: "purple", trait: "Motivating & Protective", tone: "Encouraging", riskTolerance: "medium" },
+  research: { color: "cyan", trait: "Curious & Thorough", tone: "Informative", riskTolerance: "medium" },
+  call: { color: "green", trait: "Warm & Professional", tone: "Focused", riskTolerance: "medium" },
+  negotiation: { color: "amber", trait: "Analytical", tone: "Sharp", riskTolerance: "high" },
+  scheduler: { color: "blue", trait: "Organized", tone: "Calm", riskTolerance: "low" }
 };
 
 const defaultAgents = [
@@ -13,7 +17,11 @@ const defaultAgents = [
   { id: "solver", name: "Solver Agent", emoji: "🧮", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.solver, listeningTo: null },
   { id: "proof", name: "Proof Agent", emoji: "📐", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.proof, listeningTo: null },
   { id: "revision", name: "Revision Agent", emoji: "🔁", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.revision, listeningTo: null },
-  { id: "coach", name: "Coach Agent", emoji: "🌟", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.coach, listeningTo: null }
+  { id: "coach", name: "Coach Agent", emoji: "🌟", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.coach, listeningTo: null },
+  { id: "research", name: "Research Agent", emoji: "🔍", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.research, listeningTo: null },
+  { id: "call", name: "Call Agent", emoji: "📞", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.call, listeningTo: null },
+  { id: "negotiation", name: "Negotiation Agent", emoji: "💰", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.negotiation, listeningTo: null },
+  { id: "scheduler", name: "Scheduler Agent", emoji: "📅", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.scheduler, listeningTo: null }
 ];
 
 export function createInitialMissionState() {

@@ -1,10 +1,13 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, ArrowRight, ShieldAlert, Target, Sparkles } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useMission } from "@/contexts/MissionContext";
 
 export function MissionSummary() {
   const { summary } = useMission();
+  const [searchParams] = useSearchParams();
+  const productArea = searchParams.get("domain") === "concierge" ? "concierge" : "study";
   const metricCards = summary.metrics?.length
     ? summary.metrics
     : summary.costBreakdown.map((item) => ({ label: item.label, value: item.amount, tone: "info" as const }));
@@ -95,11 +98,11 @@ export function MissionSummary() {
             <div className="flex gap-2 shrink-0">
               <Button size="sm" className="bg-success hover:bg-success/90 text-success-foreground">
                 <CheckCircle className="w-3 h-3" />
-                Sync Plan
+                {productArea === "concierge" ? "Save Itinerary" : "Sync Plan"}
               </Button>
               <Button size="sm" variant="outline">
                 <ShieldAlert className="w-3 h-3" />
-                Replan
+                {productArea === "concierge" ? "Rework Mission" : "Replan"}
               </Button>
             </div>
           </div>

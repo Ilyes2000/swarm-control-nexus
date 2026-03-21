@@ -204,7 +204,11 @@ const defaultAgents: Agent[] = [
   { id: "solver", name: "Solver Agent", emoji: "🧮", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.solver, listeningTo: null },
   { id: "proof", name: "Proof Agent", emoji: "📐", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.proof, listeningTo: null },
   { id: "revision", name: "Revision Agent", emoji: "🔁", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.revision, listeningTo: null },
-  { id: "coach", name: "Coach Agent", emoji: "🌟", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.coach, listeningTo: null }
+  { id: "coach", name: "Coach Agent", emoji: "🌟", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.coach, listeningTo: null },
+  { id: "research", name: "Research Agent", emoji: "🔍", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.research, listeningTo: null },
+  { id: "call", name: "Call Agent", emoji: "📞", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.call, listeningTo: null },
+  { id: "negotiation", name: "Negotiation Agent", emoji: "💰", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.negotiation, listeningTo: null },
+  { id: "scheduler", name: "Scheduler Agent", emoji: "📅", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.scheduler, listeningTo: null }
 ];
 
 const defaultCall: CallState = { active: false, caller: "", receiver: "", duration: 0, transcript: [], status: "ended" };
@@ -286,10 +290,33 @@ export function MissionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateAgent = useCallback((id: string, updates: Partial<Agent>) => {
-    setState((s) => ({
-      ...s,
-      agents: s.agents.map((a) => (a.id === id ? { ...a, ...updates } : a))
-    }));
+    setState((s) => {
+      const existingAgent = s.agents.find((agent) => agent.id === id);
+      if (!existingAgent) {
+        const personality = personalities[id] ?? personalities.planner;
+        const nextAgent: Agent = {
+          id,
+          name: id.charAt(0).toUpperCase() + id.slice(1),
+          emoji: "🧠",
+          status: "idle",
+          currentTask: "",
+          liveText: "",
+          confidence: 0,
+          listeningTo: null,
+          personality,
+          ...updates
+        };
+        return {
+          ...s,
+          agents: [...s.agents, nextAgent]
+        };
+      }
+
+      return {
+        ...s,
+        agents: s.agents.map((a) => (a.id === id ? { ...a, ...updates } : a))
+      };
+    });
   }, []);
 
   const addTimelineEntry = useCallback((entry: TimelineEntry) => {

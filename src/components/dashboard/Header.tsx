@@ -18,6 +18,8 @@ export function Header() {
   const [vol, setVol] = useState(70);
   const [interruptInput, setInterruptInput] = useState("");
   const [showInterruptFlash, setShowInterruptFlash] = useState(false);
+  const productArea = searchParams.get("domain") === "concierge" ? "concierge" : "study";
+  const productLabel = productArea === "concierge" ? "Concierge" : "Study";
 
   useEffect(() => {
     const prompt = searchParams.get("prompt");
@@ -73,7 +75,7 @@ export function Header() {
       next.delete("prompt");
       setSearchParams(next, { replace: true });
     }
-    void startMission(userInput, demoMode ? "simulation" : "live");
+    void startMission(userInput, demoMode ? "simulation" : "live", productArea);
   };
 
   const isLive = missionStatus === "live";
@@ -99,7 +101,7 @@ export function Header() {
           <BrainCircuit className="h-4 w-4" />
         </div>
         <h1 className="text-lg font-bold neon-text tracking-tight">
-          Study Mission <span className="text-muted-foreground font-normal text-xs">Control</span>
+          Mission <span className="text-muted-foreground font-normal text-xs">Control · {productLabel}</span>
         </h1>
       </div>
 
@@ -143,7 +145,11 @@ export function Header() {
                 value={interruptInput}
                 onChange={(e) => setInterruptInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder='Interrupt: "Shift tonight into exam sprint mode"'
+                placeholder={
+                  productArea === "concierge"
+                    ? 'Interrupt: "Move dinner later and keep it under budget"'
+                    : 'Interrupt: "Shift tonight into exam sprint mode"'
+                }
                 className="bg-warning/10 border-warning/30 text-sm font-mono placeholder:text-warning/50 focus-visible:ring-warning/50 pr-8"
                 maxLength={200}
               />
@@ -174,7 +180,11 @@ export function Header() {
             <Input
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
-              placeholder="Enter a study mission, e.g. Recover algebra before Friday..."
+              placeholder={
+                productArea === "concierge"
+                  ? "Enter a concierge mission, e.g. Plan a dinner and movie night for tonight..."
+                  : "Enter a study mission, e.g. Recover algebra before Friday..."
+              }
               className="bg-muted/50 border-border/50 text-sm font-mono"
             />
             <Button size="icon" variant="ghost" className="shrink-0 text-muted-foreground hover:text-primary">

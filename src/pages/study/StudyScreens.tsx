@@ -356,7 +356,7 @@ export function PlannerPage() {
           />
           <Textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} className="min-h-[120px] bg-muted/30" />
           <div className="mt-3 flex flex-wrap gap-3">
-            <Button onClick={() => navigate(`/mission-control?prompt=${encodeURIComponent(prompt)}`)}>
+            <Button onClick={() => navigate(`/mission-control?domain=study&prompt=${encodeURIComponent(prompt)}`)}>
               Open Mission Control
             </Button>
             <Button variant="outline" onClick={() => setPrompt("Build a calculus rescue mission with diagnostics, deep work, and spaced revision.")}>
@@ -681,7 +681,7 @@ export function PracticePage() {
                     <div className="text-sm font-medium">{set.title}</div>
                     <div className="mt-1 text-[11px] text-muted-foreground">{set.subject} · {set.difficulty} · {set.mode}</div>
                   </div>
-                  <Button size="sm" variant="outline" onClick={() => navigate(`/mission-control?prompt=${encodeURIComponent(`Coach me through ${set.title} step by step`)}`)}>
+                  <Button size="sm" variant="outline" onClick={() => navigate(`/mission-control?domain=study&prompt=${encodeURIComponent(`Coach me through ${set.title} step by step`)}`)}>
                     Live Coach
                   </Button>
                 </div>
@@ -939,7 +939,7 @@ export function WarRoomPage() {
         </div>
         <div className="mt-4 flex flex-wrap gap-3">
           <Button asChild>
-            <Link to="/mission-control?prompt=Run an algebra exam rescue mission and keep it confidence-safe.">Launch Live Rescue Mode</Link>
+            <Link to="/mission-control?domain=study&prompt=Run an algebra exam rescue mission and keep it confidence-safe.">Launch Live Rescue Mode</Link>
           </Button>
           <Button variant="outline">Start Panic Mode</Button>
         </div>

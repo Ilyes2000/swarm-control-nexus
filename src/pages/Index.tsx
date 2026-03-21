@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { MissionProvider } from "@/contexts/MissionContext";
 import { Header } from "@/components/dashboard/Header";
 import { AgentPanel } from "@/components/dashboard/AgentPanel";
@@ -79,9 +80,29 @@ function MissionDashboard() {
 const Index = () => {
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
-      <div className="px-2 pt-2 pb-0">
+      <div className="flex items-center justify-between px-2 pt-2 pb-0">
         <div className="inline-flex items-center rounded-t-lg border border-border/30 border-b-0 bg-card/80 px-3 py-1 text-[10px] font-mono text-foreground">
           mission-control
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/"
+            className="rounded-md border border-border/30 bg-card/60 px-2.5 py-1 text-[10px] font-mono text-muted-foreground transition-colors hover:text-foreground"
+          >
+            product-home
+          </Link>
+          <Link
+            to="/study"
+            className="rounded-md border border-border/30 bg-card/60 px-2.5 py-1 text-[10px] font-mono text-muted-foreground transition-colors hover:text-foreground"
+          >
+            study
+          </Link>
+          <Link
+            to="/concierge"
+            className="rounded-md border border-border/30 bg-card/60 px-2.5 py-1 text-[10px] font-mono text-muted-foreground transition-colors hover:text-foreground"
+          >
+            concierge
+          </Link>
         </div>
       </div>
 

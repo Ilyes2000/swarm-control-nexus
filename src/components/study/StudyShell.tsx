@@ -46,6 +46,7 @@ const studentNav: NavItem[] = [
 ];
 
 const supportNav: NavItem[] = [
+  { to: "/concierge", label: "Concierge", icon: Compass },
   { to: "/guardian", label: "Guardian", icon: UserRound },
   { to: "/teacher", label: "Teacher", icon: Users },
   { to: "/counselor", label: "Counselor", icon: LifeBuoy },
@@ -68,6 +69,7 @@ const pageTitles: Record<string, string> = {
   "/notes": "Notes",
   "/resources": "Resources",
   "/settings": "Settings",
+  "/concierge": "Concierge Workspace",
   "/guardian": "Guardian Dashboard",
   "/teacher": "Teacher Dashboard",
   "/counselor": "Counselor Dashboard",
@@ -106,6 +108,7 @@ export function StudyShell() {
     queryFn: () => studyApi.getDashboard()
   });
   const role = authSession?.role ?? "student";
+  const isConciergeWorkspace = location.pathname === "/concierge";
   const roleMutation = useMutation({
     mutationFn: (nextRole: StudyRole) => studyApi.switchRole(nextRole),
     onSuccess: async () => {
@@ -122,19 +125,23 @@ export function StudyShell() {
   });
 
   const title = useMemo(() => pageTitles[location.pathname] ?? "Study Mission OS", [location.pathname]);
+  const workspaceDescription = isConciergeWorkspace
+    ? `${profile?.displayName ?? "Student"} is using the original concierge workflow for research, calling, negotiation, and itinerary planning inside the unified product.`
+    : `${profile?.displayName ?? "Student"} is working inside a math-first study system with replanning, mastery tracking, and live mission control.`;
+  const missionControlHref = isConciergeWorkspace ? "/mission-control?domain=concierge" : "/mission-control?domain=study";
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen flex-col lg:flex-row">
         <aside className="border-b border-border/40 bg-card/50 backdrop-blur-xl lg:w-80 lg:border-b-0 lg:border-r">
           <div className="p-5">
-            <Link to="/today" className="flex items-center gap-3">
+            <Link to="/" className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/30 bg-primary/10 text-primary">
                 <BrainCircuit className="h-5 w-5" />
               </div>
               <div>
                 <div className="text-sm font-semibold">Study Mission OS</div>
-                <div className="text-[11px] font-mono text-muted-foreground">math-first student command center</div>
+                <div className="text-[11px] font-mono text-muted-foreground">study + concierge mission platform</div>
               </div>
             </Link>
 
@@ -184,9 +191,7 @@ export function StudyShell() {
               <div>
                 <div className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">Web-first PWA</div>
                 <h1 className="mt-1 text-2xl font-semibold">{title}</h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {profile?.displayName ?? "Student"} is working inside a math-first study system with replanning, mastery tracking, and live mission control.
-                </p>
+                <p className="mt-1 text-sm text-muted-foreground">{workspaceDescription}</p>
                 {!authSession?.onboardingCompleted ? (
                   <p className="mt-2 text-sm text-warning">
                     Onboarding is still in draft mode. Finish setup to lock in subjects, targets, and notification defaults.
@@ -211,7 +216,7 @@ export function StudyShell() {
                   <Link to="/onboarding">{authSession?.onboardingCompleted ? "Review Onboarding" : "Finish Onboarding"}</Link>
                 </Button>
                 <Button asChild className="rounded-2xl">
-                  <Link to="/mission-control">Open Mission Control</Link>
+                  <Link to={missionControlHref}>Open Mission Control</Link>
                 </Button>
               </div>
             </div>

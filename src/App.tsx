@@ -7,6 +7,8 @@ import { StudyShell } from "@/components/study/StudyShell";
 import { studyApi } from "@/lib/study-api";
 import MissionControl from "./pages/MissionControl.tsx";
 import NotFound from "./pages/NotFound.tsx";
+import ConciergeWorkspace from "./pages/ConciergeWorkspace.tsx";
+import ProductHome from "./pages/ProductHome.tsx";
 import {
   AdminPage,
   CalendarPage,
@@ -49,7 +51,8 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<EntryRedirect />} />
+          <Route path="/" element={<ProductHome />} />
+          <Route path="/study" element={<EntryRedirect />} />
           <Route path="/onboarding" element={<OnboardingPage />} />
           <Route element={<StudyShell />}>
             <Route path="/today" element={<TodayPage />} />
@@ -64,6 +67,7 @@ const App = () => (
             <Route path="/notes" element={<NotesPage />} />
             <Route path="/resources" element={<ResourcesPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/concierge" element={<ConciergeWorkspace />} />
             <Route path="/guardian" element={<GuardianPage />} />
             <Route path="/teacher" element={<TeacherPage />} />
             <Route path="/counselor" element={<CounselorPage />} />
