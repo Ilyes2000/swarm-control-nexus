@@ -27,3 +27,6 @@ clawswarm-backend/.env
 *.njsproj
 *.sln
 *.sw?
+
+# Claude Code
+CLAUDE.md
