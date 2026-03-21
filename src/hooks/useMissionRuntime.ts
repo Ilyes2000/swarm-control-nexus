@@ -31,6 +31,9 @@ export function useMissionRuntime() {
     addMemory,
     addSkill,
     addAdaptation,
+    addMasteryUpdate,
+    addRiskSignal,
+    setKnowledgeTwin,
     setTrainingMode,
     setDemoMode,
     setUserInput,
@@ -59,6 +62,9 @@ export function useMissionRuntime() {
       addMemory,
       addSkill,
       addAdaptation,
+      addMasteryUpdate,
+      addRiskSignal,
+      setKnowledgeTwin,
       setTrainingMode,
       setDemoMode,
       setUserInput,
@@ -71,6 +77,9 @@ export function useMissionRuntime() {
       addSMS,
       addSkill,
       addTimelineEntry,
+      addMasteryUpdate,
+      addRiskSignal,
+      setKnowledgeTwin,
       hydrateMission,
       setCall,
       setDemoMode,
@@ -238,7 +247,7 @@ export function useMissionRuntime() {
     async (missionText: string, mode: MissionMode) => {
       const trimmedMission = missionText.trim();
       if (!trimmedMission) {
-        toast.error("Enter a mission before starting.");
+        toast.error("Enter a study mission before starting.");
         return;
       }
 

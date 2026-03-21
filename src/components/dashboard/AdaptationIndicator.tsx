@@ -22,7 +22,7 @@ export function AdaptationIndicator() {
             </motion.div>
             <span className="text-[9px] font-mono text-neon-purple">
               <Moon className="w-2.5 h-2.5 inline mr-1" />
-              Learning Mode Active — AI is improving...
+              Learning Mode Active - Study AI is improving...
             </span>
           </motion.div>
         )}

@@ -2,13 +2,12 @@ import { createInitialMissionState, cloneState } from "./state.js";
 import { createEvent } from "./protocol.js";
 import { createLlmGateway } from "./integrations/llm.js";
 import { createTelnyxSmsClient } from "./integrations/telnyx-sms.js";
-import { createResembleClient } from "./integrations/resemble.js";
-import { createClawdtalkClient } from "./integrations/clawdtalk.js";
 import { runPlannerAgent } from "./agents/planner.js";
-import { runResearchAgent } from "./agents/research.js";
-import { runCallerAgent } from "./agents/caller.js";
-import { runNegotiatorAgent } from "./agents/negotiator.js";
-import { runSchedulerAgent } from "./agents/scheduler.js";
+import { runTutorAgent } from "./agents/tutor.js";
+import { runSolverAgent } from "./agents/solver.js";
+import { runProofAgent } from "./agents/proof.js";
+import { runRevisionAgent } from "./agents/revision.js";
+import { runCoachAgent } from "./agents/coach.js";
 
 function createAbortError() {
   return new Error("Mission run aborted");
@@ -22,13 +21,12 @@ function nowLabel() {
 }
 
 export class MissionOrchestrator {
-  constructor({ config, emitEvent }) {
+  constructor({ config, emitEvent, studyStore }) {
     this.config = config;
     this.emitEvent = emitEvent;
+    this.studyStore = studyStore;
     this.llm = createLlmGateway(config);
     this.smsClient = createTelnyxSmsClient(config);
-    this.resembleClient = createResembleClient(config);
-    this.clawdtalkClient = createClawdtalkClient(config);
     this.state = createInitialMissionState();
     this.sequenceNumber = 0;
     this.currentRunId = 0;
@@ -116,6 +114,21 @@ export class MissionOrchestrator {
   addAdaptation(event) {
     this.state.adaptations.push(event);
     this.broadcast("adaptation", event);
+  }
+
+  addMasteryUpdate(update) {
+    this.state.masteryUpdates.push(update);
+    this.broadcast("mastery_updated", update);
+  }
+
+  addRiskSignal(signal) {
+    this.state.riskSignals.push(signal);
+    this.broadcast("risk_signal", signal);
+  }
+
+  setKnowledgeTwin(nodes) {
+    this.state.knowledgeTwin = nodes;
+    this.broadcast("knowledge_twin_updated", nodes);
   }
 
   setTrainingMode(enabled) {
@@ -239,7 +252,7 @@ export class MissionOrchestrator {
   async handleInboundSms(message) {
     const sms = {
       id: this.nextId("sms"),
-      from: message.from || "User",
+      from: message.from || "Student",
       text: message.text,
       timestamp: nowLabel(),
       direction: "received"
@@ -251,10 +264,10 @@ export class MissionOrchestrator {
       this.addTimelineEntry({
         id: this.nextId("timeline"),
         timestamp: nowLabel(),
-        agentId: "scheduler",
+        agentId: "coach",
         agentEmoji: "✅",
-        agentName: "User",
-        description: "User confirmed the itinerary by SMS.",
+        agentName: "Student",
+        description: "Student confirmed the updated study plan.",
         status: "success"
       });
     }
@@ -265,8 +278,8 @@ export class MissionOrchestrator {
         timestamp: nowLabel(),
         agentId: "planner",
         agentEmoji: "📝",
-        agentName: "User",
-        description: "User requested itinerary modifications by SMS.",
+        agentName: "Student",
+        description: "Student requested a study-plan modification by message.",
         status: "pending"
       });
     }
@@ -275,7 +288,7 @@ export class MissionOrchestrator {
   async sendUserSms(text) {
     const sms = {
       id: this.nextId("sms"),
-      from: "ClawSwarm",
+      from: "Study Mission OS",
       text,
       timestamp: nowLabel(),
       direction: "sent"
@@ -289,6 +302,8 @@ export class MissionOrchestrator {
   }
 
   async runMission({ missionText, mode, signal }) {
+    const planningContext = this.studyStore.getPlanningContext({ missionText });
+
     this.addMemory({
       id: this.nextId("memory"),
       agentId: "planner",
@@ -300,9 +315,9 @@ export class MissionOrchestrator {
 
     this.updateAgent("planner", {
       status: "thinking",
-      currentTask: "Decomposing mission",
-      liveText: "Analyzing mission requirements.",
-      confidence: 75
+      currentTask: "Building a study mission",
+      liveText: "Decomposing goals, deadlines, and energy constraints.",
+      confidence: 76
     });
     const plannerTimelineId = this.nextId("timeline");
     this.addTimelineEntry({
@@ -311,15 +326,26 @@ export class MissionOrchestrator {
       agentId: "planner",
       agentEmoji: "🧠",
       agentName: "Planner Agent",
-      description: `Analyzing mission: ${missionText}`,
+      description: `Analyzing study mission: ${missionText}`,
       status: "pending"
     });
     await this.waitStep(signal, 1);
 
-    const plannerResult = await runPlannerAgent({ missionText, llm: this.llm });
+    const plannerResult = await runPlannerAgent({ missionText, llm: this.llm, context: planningContext });
+    const persistedPlan = this.studyStore.createMissionPlan({ missionText, plannerResult });
+    this.broadcast("plan_generated", {
+      missionId: persistedPlan.mission.id,
+      title: plannerResult.missionTitle,
+      focusAreas: plannerResult.focusAreas,
+      readinessScore: plannerResult.readinessBaseline,
+      riskLevel: plannerResult.activeRisk?.level ?? "low"
+    });
+    persistedPlan.tasks.forEach((task) => this.broadcast("task_created", task));
+    persistedPlan.sessions.forEach((session) => this.broadcast("session_scheduled", session));
+
     this.updateAgent("planner", {
       status: "speaking",
-      currentTask: "Broadcasting plan",
+      currentTask: "Publishing roadmap",
       liveText: plannerResult.liveText,
       confidence: plannerResult.confidence
     });
@@ -329,349 +355,355 @@ export class MissionOrchestrator {
       agentId: "planner",
       agentEmoji: "🧠",
       agentName: "Planner Agent",
-      decision: "Mission decomposed into research, calls, optimization, and scheduling.",
+      decision: `Sequenced ${plannerResult.tasks.length} tasks across ${plannerResult.sessions.length} study sessions.`,
       reasoning: plannerResult.reasoning,
       confidence: plannerResult.confidence,
-      alternatives: ["Keep the mission manual", "Research only and stop before bookings"],
+      alternatives: ["Keep a broad study plan", "Delay revision until after diagnostics"],
+      timestamp: nowLabel()
+    });
+    this.addMemory({
+      id: this.nextId("memory"),
+      agentId: "planner",
+      type: "context",
+      label: "Focus areas",
+      value: plannerResult.focusAreas.join(", "),
       timestamp: nowLabel()
     });
     await this.waitStep(signal, 1);
 
     this.updateAgent("planner", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
-    this.updateAgent("research", {
-      status: "listening",
-      listeningTo: "planner",
-      currentTask: "Receiving plan",
-      liveText: "",
-      confidence: 0
-    });
-    await this.waitStep(signal, 0.5);
-
-    this.updateAgent("research", {
+    this.updateAgent("tutor", {
       status: "thinking",
-      listeningTo: null,
-      currentTask: "Finding dinner and movie options",
-      liveText: "Scanning trusted venue options.",
-      confidence: 61
+      currentTask: "Building concept explanations",
+      liveText: "Translating the hardest topic into a student-friendly explanation.",
+      confidence: 73
     });
-    const researchTimelineId = this.nextId("timeline");
+    const tutorTimelineId = this.nextId("timeline");
     this.addTimelineEntry({
-      id: researchTimelineId,
+      id: tutorTimelineId,
       timestamp: nowLabel(),
-      agentId: "research",
-      agentEmoji: "🔍",
-      agentName: "Research Agent",
-      description: "Searching restaurants and cinema listings.",
+      agentId: "tutor",
+      agentEmoji: "📚",
+      agentName: "Tutor Agent",
+      description: "Preparing concept scaffolds and hint ladders.",
       status: "pending"
     });
     await this.waitStep(signal, 1);
 
-    const researchResult = await runResearchAgent({ missionText, llm: this.llm });
-    if (researchResult.usedFallback) {
-      this.addAdaptation({
-        id: this.nextId("adaptation"),
-        message: "Fallback venue data activated for deterministic demo reliability.",
-        timestamp: nowLabel(),
-        type: "learning"
-      });
-      this.addSkill({
-        id: this.nextId("skill"),
-        title: "Seeded venue fallback",
-        description: "Use deterministic venue fixtures whenever live lookup is unavailable.",
-        source: "Research fallback",
-        version: 1,
-        usageCount: 1,
-        createdAt: nowLabel(),
-        agentId: "research"
-      });
-    }
-    this.updateAgent("research", {
+    const tutorResult = await runTutorAgent({ missionText, llm: this.llm });
+    this.studyStore.recordMissionEvent(persistedPlan.mission.id, "hint_revealed", `Prepared ${tutorResult.hints.length} hint steps for ${plannerResult.focusAreas[0]}.`);
+    tutorResult.hints.forEach((hint) => this.broadcast("hint_revealed", { missionId: persistedPlan.mission.id, hint }));
+    this.updateAgent("tutor", {
       status: "speaking",
-      liveText: researchResult.liveText,
-      confidence: researchResult.confidence
+      currentTask: "Explaining key ideas",
+      liveText: tutorResult.liveText,
+      confidence: tutorResult.confidence
     });
-    this.updateTimelineEntry(researchTimelineId, { status: "success" });
+    this.updateTimelineEntry(tutorTimelineId, { status: "success" });
     this.addReasoning({
       id: this.nextId("reasoning"),
-      agentId: "research",
-      agentEmoji: "🔍",
-      agentName: "Research Agent",
-      decision: `Selected ${researchResult.restaurant.name} and ${researchResult.cinema.name}.`,
-      reasoning: researchResult.reasoning,
-      confidence: researchResult.confidence,
-      alternatives: ["Shift to a later movie", "Choose a cheaper but lower-rated restaurant"],
+      agentId: "tutor",
+      agentEmoji: "📚",
+      agentName: "Tutor Agent",
+      decision: "Prepared intuitive, formal, and exam-style explanations for the mission.",
+      reasoning: "Students retain more when the same idea is available in multiple frames and the hint ladder delays answer leakage until the student commits to a first step.",
+      confidence: tutorResult.confidence,
+      alternatives: ["Give only direct worked solutions", "Delay tutoring until after practice"],
+      timestamp: nowLabel()
+    });
+    await this.waitStep(signal, 0.5);
+
+    this.setCall({
+      active: true,
+      caller: "Tutor Agent",
+      receiver: "Student Workspace",
+      duration: 0,
+      transcript: [],
+      status: "ringing"
+    });
+    await this.waitStep(signal, 0.5);
+    this.setCall({
+      active: true,
+      caller: "Tutor Agent",
+      receiver: "Student Workspace",
+      duration: 2,
+      transcript: [],
+      status: "connected"
+    });
+    for (const [index, line] of tutorResult.transcript.entries()) {
+      await this.waitStep(signal, 0.35);
+      this.addCallTranscript(line.speaker, line.text);
+      this.setCall({
+        ...this.state.call,
+        active: true,
+        caller: "Tutor Agent",
+        receiver: "Student Workspace",
+        duration: 3 + index,
+        status: "connected"
+      });
+    }
+    this.setCall({
+      active: true,
+      caller: "Tutor Agent",
+      receiver: "Student Workspace",
+      duration: tutorResult.transcript.length + 3,
+      transcript: [],
+      status: "ended"
+    });
+    this.updateAgent("tutor", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+
+    this.updateAgent("solver", {
+      status: "thinking",
+      currentTask: "Scoring a sample attempt",
+      liveText: "Looking for the first error, not just the final error.",
+      confidence: 78
+    });
+    const solverTimelineId = this.nextId("timeline");
+    this.addTimelineEntry({
+      id: solverTimelineId,
+      timestamp: nowLabel(),
+      agentId: "solver",
+      agentEmoji: "🧮",
+      agentName: "Solver Agent",
+      description: "Running attempt analysis and method selection.",
+      status: "pending"
+    });
+    await this.waitStep(signal, 1);
+
+    const solverResult = await runSolverAgent({ missionText, llm: this.llm, context: planningContext });
+    this.studyStore.recordMissionEvent(persistedPlan.mission.id, "attempt_scored", `Scored a guided attempt at ${solverResult.attemptScore}%.`);
+    this.broadcast("attempt_scored", {
+      missionId: persistedPlan.mission.id,
+      score: solverResult.attemptScore,
+      firstError: solverResult.firstError
+    });
+    this.updateAgent("solver", {
+      status: "speaking",
+      currentTask: "Publishing error diagnosis",
+      liveText: solverResult.liveText,
+      confidence: solverResult.confidence
+    });
+    this.updateTimelineEntry(solverTimelineId, { status: "success" });
+    this.addReasoning({
+      id: this.nextId("reasoning"),
+      agentId: "solver",
+      agentEmoji: "🧮",
+      agentName: "Solver Agent",
+      decision: "Located the first unstable step and recommended a safer method.",
+      reasoning: solverResult.firstError,
+      confidence: solverResult.confidence,
+      alternatives: ["Score only the final answer", "Give a full solution immediately"],
       timestamp: nowLabel()
     });
     this.addMemory({
       id: this.nextId("memory"),
-      agentId: "research",
-      type: "context",
-      label: "Research shortlist",
-      value: `${researchResult.restaurant.name} at ${researchResult.restaurant.reservationTime}; ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}`,
+      agentId: "solver",
+      type: "decision",
+      label: "Primary mistake pattern",
+      value: solverResult.mistakePatterns[0],
       timestamp: nowLabel()
     });
-    await this.waitStep(signal, 1);
+    await this.waitStep(signal, 0.75);
 
-    this.updateAgent("research", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
-    this.updateAgent("call", {
-      status: "listening",
-      listeningTo: "research",
-      currentTask: "Receiving venue shortlist",
-      liveText: "",
-      confidence: 0
-    });
-    await this.waitStep(signal, 0.5);
-
-    await this.handleCallSequence({
-      signal,
-      mode,
-      targetName: researchResult.restaurant.name,
-      targetPhone: researchResult.restaurant.phone,
-      reservationLine: `Hi, I need a dinner reservation for two at ${researchResult.restaurant.reservationTime}.`,
-      description: `Calling ${researchResult.restaurant.name} for a reservation`,
-      successDescription: `Dinner booked at ${researchResult.restaurant.name} for ${researchResult.restaurant.reservationTime}`,
-      memoryLabel: "Dinner booking",
-      memoryValue: `${researchResult.restaurant.name} confirmed for ${researchResult.restaurant.reservationTime}`
-    });
-
-    await this.sendUserSms(`Booked dinner at ${researchResult.restaurant.name} for ${researchResult.restaurant.reservationTime}. Calling the cinema next.`);
-
-    await this.handleCallSequence({
-      signal,
-      mode,
-      targetName: researchResult.cinema.name,
-      targetPhone: researchResult.cinema.phone,
-      reservationLine: `Hello, I want two ${researchResult.cinema.seatType} seats for ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}.`,
-      description: `Calling ${researchResult.cinema.name} for movie seats`,
-      successDescription: `Movie seats secured for ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}`,
-      memoryLabel: "Movie booking",
-      memoryValue: `${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime} with ${researchResult.cinema.seatType} seats`
-    });
-
-    this.updateAgent("negotiation", {
-      status: "listening",
-      listeningTo: "call",
-      currentTask: "Reviewing booking costs",
-      liveText: "",
-      confidence: 0
-    });
-    await this.waitStep(signal, 0.5);
-
-    this.updateAgent("negotiation", {
+    this.updateAgent("solver", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+    this.updateAgent("proof", {
       status: "thinking",
-      listeningTo: null,
-      currentTask: "Optimizing total cost",
-      liveText: "Checking stackable offers and discounts.",
-      confidence: 74
+      currentTask: "Adding justification guardrails",
+      liveText: "Making each step defensible under exam pressure.",
+      confidence: 71
     });
-    const negotiationTimelineId = this.nextId("timeline");
+    const proofTimelineId = this.nextId("timeline");
     this.addTimelineEntry({
-      id: negotiationTimelineId,
+      id: proofTimelineId,
       timestamp: nowLabel(),
-      agentId: "negotiation",
-      agentEmoji: "💰",
-      agentName: "Negotiation Agent",
-      description: "Comparing available discounts.",
+      agentId: "proof",
+      agentEmoji: "📐",
+      agentName: "Proof Agent",
+      description: "Converting method choices into formal justifications.",
+      status: "pending"
+    });
+    await this.waitStep(signal, 0.75);
+
+    const proofResult = await runProofAgent({ missionText, llm: this.llm });
+    this.updateAgent("proof", {
+      status: "speaking",
+      currentTask: "Publishing proof checklist",
+      liveText: proofResult.liveText,
+      confidence: proofResult.confidence
+    });
+    this.updateTimelineEntry(proofTimelineId, { status: "success" });
+    this.addReasoning({
+      id: this.nextId("reasoning"),
+      agentId: "proof",
+      agentEmoji: "📐",
+      agentName: "Proof Agent",
+      decision: "Added a justification checklist to protect method quality and theorem usage.",
+      reasoning: proofResult.reasoning,
+      confidence: proofResult.confidence,
+      alternatives: ["Skip formal checks", "Attach proof guidance only after failure"],
+      timestamp: nowLabel()
+    });
+    await this.waitStep(signal, 0.75);
+
+    this.updateAgent("proof", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+    this.updateAgent("revision", {
+      status: "thinking",
+      currentTask: "Scheduling retrieval loops",
+      liveText: "Turning weak spots into a spaced-repetition queue.",
+      confidence: 80
+    });
+    const revisionTimelineId = this.nextId("timeline");
+    this.addTimelineEntry({
+      id: revisionTimelineId,
+      timestamp: nowLabel(),
+      agentId: "revision",
+      agentEmoji: "🔁",
+      agentName: "Revision Agent",
+      description: "Building revision loops and the knowledge twin.",
       status: "pending"
     });
     await this.waitStep(signal, 1);
 
-    const negotiationResult = await runNegotiatorAgent({ researchResult, llm: this.llm });
-    this.updateAgent("negotiation", {
+    const revisionResult = await runRevisionAgent({ missionText, llm: this.llm, context: planningContext });
+    revisionResult.masteryUpdates.forEach((update) => this.addMasteryUpdate(update));
+    this.setKnowledgeTwin(revisionResult.knowledgeTwin);
+    this.studyStore.recordMissionEvent(persistedPlan.mission.id, "knowledge_twin_updated", `Updated ${revisionResult.knowledgeTwin.length} mastery nodes after revision planning.`);
+    this.updateAgent("revision", {
       status: "speaking",
-      liveText: negotiationResult.liveText,
-      confidence: negotiationResult.confidence
+      currentTask: "Publishing retention plan",
+      liveText: revisionResult.liveText,
+      confidence: revisionResult.confidence
     });
-    this.updateTimelineEntry(negotiationTimelineId, { status: "success" });
+    this.updateTimelineEntry(revisionTimelineId, { status: "success" });
     this.addReasoning({
       id: this.nextId("reasoning"),
-      agentId: "negotiation",
-      agentEmoji: "💰",
-      agentName: "Negotiation Agent",
-      decision: "Applied the best available dinner and cinema discounts.",
-      reasoning: negotiationResult.reasoning,
-      confidence: negotiationResult.confidence,
-      alternatives: ["Keep full-price booking", "Move to a cheaper but worse-timed show"],
+      agentId: "revision",
+      agentEmoji: "🔁",
+      agentName: "Revision Agent",
+      decision: "Scheduled mixed review around the weakest concepts and the fastest forgetting risks.",
+      reasoning: "Revision is ordered by fragility, upcoming pressure, and the student's confidence gap so we improve recall and metacognition together.",
+      confidence: revisionResult.confidence,
+      alternatives: ["Review only the newest material", "Do untimed review after the exam block"],
       timestamp: nowLabel()
     });
-    await this.waitStep(signal, 1);
-
-    this.updateAgent("negotiation", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
-    this.updateAgent("scheduler", {
-      status: "listening",
-      listeningTo: "negotiation",
-      currentTask: "Preparing final itinerary",
-      liveText: "",
-      confidence: 0
+    this.addSkill({
+      id: this.nextId("skill"),
+      title: "Confidence-calibrated revision",
+      description: "Blend mastery gain and self-reported confidence so the next review block targets the real gap.",
+      source: "Revision engine",
+      version: 1,
+      usageCount: 1,
+      createdAt: nowLabel(),
+      agentId: "revision"
     });
-    await this.waitStep(signal, 0.5);
+    await this.waitStep(signal, 0.75);
 
-    this.updateAgent("scheduler", {
+    this.updateAgent("revision", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+    this.updateAgent("coach", {
       status: "thinking",
-      listeningTo: null,
-      currentTask: "Building itinerary",
-      liveText: "Sequencing dinner, transit, and showtime.",
-      confidence: 82
+      currentTask: "Protecting execution and motivation",
+      liveText: "Converting the plan into nudges, guardrails, and a realistic readiness score.",
+      confidence: 83
     });
-    const schedulerTimelineId = this.nextId("timeline");
+    const coachTimelineId = this.nextId("timeline");
     this.addTimelineEntry({
-      id: schedulerTimelineId,
+      id: coachTimelineId,
       timestamp: nowLabel(),
-      agentId: "scheduler",
-      agentEmoji: "📅",
-      agentName: "Scheduler Agent",
-      description: "Building final itinerary.",
+      agentId: "coach",
+      agentEmoji: "🌟",
+      agentName: "Coach Agent",
+      description: "Synthesizing readiness, next actions, and focus-risk guardrails.",
       status: "pending"
     });
     await this.waitStep(signal, 1);
 
-    const schedulerResult = await runSchedulerAgent({
-      researchResult,
-      negotiationResult,
-      llm: this.llm
+    const coachResult = await runCoachAgent({
+      missionText,
+      llm: this.llm,
+      plannerResult,
+      solverResult,
+      revisionResult,
+      context: planningContext
     });
-    this.updateAgent("scheduler", {
+    this.studyStore.completeMission({
+      missionId: persistedPlan.mission.id,
+      coachResult,
+      revisionResult,
+      solverResult
+    });
+
+    this.addRiskSignal(coachResult.riskSignal);
+    coachResult.nudges.forEach((nudge) => {
+      void nudge;
+      this.addSms({
+        id: this.nextId("sms"),
+        from: "Coach Agent",
+        text: nudge.text,
+        timestamp: nowLabel(),
+        direction: "sent"
+      });
+    });
+    this.updateAgent("coach", {
       status: "speaking",
-      liveText: schedulerResult.liveText,
-      confidence: schedulerResult.confidence
+      currentTask: "Publishing readiness brief",
+      liveText: coachResult.liveText,
+      confidence: coachResult.confidence
     });
-    this.updateTimelineEntry(schedulerTimelineId, { status: "success" });
+    this.updateTimelineEntry(coachTimelineId, { status: "success" });
     this.addReasoning({
       id: this.nextId("reasoning"),
-      agentId: "scheduler",
-      agentEmoji: "📅",
-      agentName: "Scheduler Agent",
-      decision: "Final itinerary aligned dinner timing with the best movie slot.",
-      reasoning: "The dinner ends with a comfortable travel buffer before the selected showtime, preserving seat quality and discount coverage.",
-      confidence: schedulerResult.confidence,
-      alternatives: ["Later dinner and later show", "Movie first, dinner second"],
+      agentId: "coach",
+      agentEmoji: "🌟",
+      agentName: "Coach Agent",
+      decision: "Reduced overload risk while keeping the mission aggressive enough to raise readiness.",
+      reasoning: coachResult.riskSignal.message,
+      confidence: coachResult.confidence,
+      alternatives: ["Keep maximum intensity for every session", "Defer diagnostics and hope confidence recovers"],
       timestamp: nowLabel()
     });
-    this.setSummary(schedulerResult.summary);
+
+    const summary = {
+      visible: true,
+      missionTitle: plannerResult.missionTitle,
+      result: `Mission ready: ${plannerResult.missionTitle}. The student now has a focused ${plannerResult.sessions.length}-session path with targeted tutoring, retrieval practice, and confidence guardrails around ${plannerResult.focusAreas.join(", ")}.`,
+      costBreakdown: coachResult.studyMetrics.map((metric) => ({ label: metric.label, amount: metric.value })),
+      metrics: coachResult.studyMetrics,
+      nextActions: coachResult.nextActions,
+      focusAreas: plannerResult.focusAreas,
+      readinessScore: coachResult.readinessScore,
+      riskLevel: coachResult.riskLevel,
+      timeTaken: "under 30 seconds"
+    };
+
+    this.setSummary(summary);
     this.addTimelineEntry({
       id: this.nextId("timeline"),
       timestamp: nowLabel(),
       agentId: "planner",
       agentEmoji: "✅",
       agentName: "Planner Agent",
-      description: "Mission completed successfully.",
+      description: "Study mission completed and synced to the student workspace.",
       status: "success"
     });
-    await this.sendUserSms(`Mission complete. Dinner at ${researchResult.restaurant.name} ${researchResult.restaurant.reservationTime}, then ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}. Reply CONFIRM or MODIFY.`);
+    if (plannerResult.rescueMode) {
+      this.broadcast("exam_mode_started", {
+        missionId: persistedPlan.mission.id,
+        title: plannerResult.missionTitle
+      });
+    }
+    await this.sendUserSms(`Study mission ready. Readiness ${coachResult.readinessScore}%. Next action: ${coachResult.nextActions[0]} Reply CONFIRM or MODIFY.`);
 
     this.addAdaptation({
       id: this.nextId("adaptation"),
-      message: "Mission finished. Training mode is evaluating the execution trace.",
+      message: "Mission completed. The system is evaluating confidence gaps and revision timing.",
       timestamp: nowLabel(),
       type: "improving"
     });
     this.setTrainingMode(true);
     await this.waitStep(signal, 0.5);
     this.setTrainingMode(false);
-    this.updateAgent("scheduler", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+    this.updateAgent("coach", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
     this.setMissionStatus("completed", mode);
-  }
-
-  async handleCallSequence({
-    signal,
-    mode,
-    targetName,
-    targetPhone,
-    reservationLine,
-    description,
-    successDescription,
-    memoryLabel,
-    memoryValue
-  }) {
-    this.updateAgent("call", {
-      status: "calling",
-      listeningTo: null,
-      currentTask: description,
-      liveText: `Dialing ${targetName}.`,
-      confidence: 79
-    });
-    const timelineId = this.nextId("timeline");
-    this.addTimelineEntry({
-      id: timelineId,
-      timestamp: nowLabel(),
-      agentId: "call",
-      agentEmoji: "📞",
-      agentName: "Call Agent",
-      description,
-      status: "pending"
-    });
-
-    this.setCall({
-      active: true,
-      caller: "Call Agent",
-      receiver: targetName,
-      duration: 0,
-      transcript: [],
-      status: "ringing"
-    });
-    await this.waitStep(signal, 1);
-
-    const callResult = await runCallerAgent({
-      businessName: targetName,
-      businessPhone: targetPhone,
-      reservationLine,
-      mode,
-      clawdtalk: this.clawdtalkClient,
-      resemble: this.resembleClient,
-      missionVoiceName: this.config.missionVoiceName
-    });
-
-    this.setCall({
-      active: true,
-      caller: "Call Agent",
-      receiver: targetName,
-      duration: 3,
-      transcript: [],
-      status: "connected"
-    });
-    this.updateAgent("call", {
-      status: "speaking",
-      currentTask: description,
-      liveText: `Connected to ${targetName}.`,
-      confidence: 87
-    });
-
-    for (const [index, line] of callResult.transcript.entries()) {
-      await this.waitStep(signal, 0.5);
-      this.addCallTranscript(line.speaker, line.text);
-      this.setCall({
-        ...this.state.call,
-        active: true,
-        caller: "Call Agent",
-        receiver: targetName,
-        duration: 4 + index,
-        status: "connected"
-      });
-    }
-
-    this.setCall({
-      active: true,
-      caller: "Call Agent",
-      receiver: targetName,
-      duration: callResult.transcript.length + 4,
-      transcript: [],
-      status: "ended"
-    });
-    this.updateAgent("call", {
-      status: "idle",
-      currentTask: "",
-      liveText: "",
-      confidence: 0
-    });
-    this.updateTimelineEntry(timelineId, { status: "success", description: successDescription });
-    this.addMemory({
-      id: this.nextId("memory"),
-      agentId: "call",
-      type: "decision",
-      label: memoryLabel,
-      value: memoryValue,
-      timestamp: nowLabel()
-    });
   }
 
   async runInterrupt({ command, mode, signal }) {
@@ -680,45 +712,57 @@ export class MissionOrchestrator {
       timestamp: nowLabel(),
       agentId: "planner",
       agentEmoji: "⚡",
-      agentName: "User Interrupt",
+      agentName: "Student Interrupt",
       description: command,
       status: "pending"
     });
     this.updateAgent("planner", {
       status: "thinking",
-      currentTask: "Re-planning mission",
+      currentTask: "Rebuilding the remaining study plan",
       liveText: `Processing interrupt: "${command}"`,
-      confidence: 82
+      confidence: 84
     });
     await this.waitStep(signal, 1);
+
+    const followUpTask = this.studyStore.replanMission(command);
+    this.broadcast("mission_replanned", {
+      command,
+      task: followUpTask
+    });
+    this.broadcast("task_created", followUpTask);
+    this.broadcast("session_scheduled", {
+      missionId: followUpTask.missionId,
+      title: `Recovery block • ${command}`,
+      status: "planned"
+    });
 
     this.addReasoning({
       id: this.nextId("reasoning"),
       agentId: "planner",
       agentEmoji: "🧠",
       agentName: "Planner Agent",
-      decision: "Accepted the user interrupt and rebuilt the remaining mission.",
-      reasoning: "The user override takes precedence over the prior optimization path, so the fastest safe response is to re-plan the remaining booking steps.",
-      confidence: 87,
-      alternatives: ["Ignore the change request", "Queue it after the current booking"],
+      decision: "Accepted the student override and rebuilt the next action instead of forcing the original path.",
+      reasoning: "Study missions should preserve momentum. The fastest safe response is to collapse the next step into a smaller, more compliant task and keep the mission alive.",
+      confidence: 88,
+      alternatives: ["Ignore the override", "Restart the whole plan from zero"],
       timestamp: nowLabel()
     });
     this.addAdaptation({
       id: this.nextId("adaptation"),
-      message: `Mission adapted after user interrupt: ${command}`,
+      message: `Mission adapted after student interrupt: ${command}`,
       timestamp: nowLabel(),
       type: "evolved"
     });
     this.updateAgent("planner", {
       status: "speaking",
-      currentTask: "Publishing updated plan",
-      liveText: `Replanned mission to honor: ${command}`,
-      confidence: 90
+      currentTask: "Publishing updated next step",
+      liveText: `Updated the mission to honor: ${command}`,
+      confidence: 91
     });
     await this.waitStep(signal, 1);
 
     this.updateAgent("planner", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
-    await this.sendUserSms(`Plan updated. Your request "${command}" has been folded into the live mission.`);
+    await this.sendUserSms(`Plan updated. New task added: ${followUpTask.title}.`);
     this.setMissionStatus("completed", mode);
   }
 }

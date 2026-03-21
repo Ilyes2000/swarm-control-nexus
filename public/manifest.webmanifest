@@ -1,0 +1,16 @@
+{
+  "name": "Study Mission OS",
+  "short_name": "Study Mission",
+  "description": "Math-first study planning, live mission control, tutoring, revision, and readiness tracking.",
+  "start_url": "/today",
+  "display": "standalone",
+  "background_color": "#080911",
+  "theme_color": "#7c3aed",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    }
+  ]
+}

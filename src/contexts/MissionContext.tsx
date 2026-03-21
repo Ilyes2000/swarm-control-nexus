@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useCallback, ReactNode } fr
 export type AgentStatus = "idle" | "thinking" | "speaking" | "calling" | "listening" | "retrying";
 
 export interface AgentPersonality {
-  color: string; // tailwind color token
+  color: string;
   trait: string;
   tone: string;
   riskTolerance: "low" | "medium" | "high";
@@ -16,9 +16,9 @@ export interface Agent {
   status: AgentStatus;
   currentTask: string;
   liveText: string;
-  confidence: number; // 0-100
+  confidence: number;
   personality: AgentPersonality;
-  listeningTo: string | null; // id of agent being listened to
+  listeningTo: string | null;
 }
 
 export interface MemoryEntry {
@@ -84,10 +84,48 @@ export interface OptimizationData {
   tradeoffs: { label: string; original: string; optimized: string }[];
 }
 
+export interface MissionMetric {
+  label: string;
+  value: string;
+  tone?: "info" | "success" | "warning";
+}
+
+export interface MasteryUpdate {
+  id: string;
+  topic: string;
+  mastery: number;
+  confidence: number;
+  trend: "up" | "steady" | "down";
+  timestamp: string;
+}
+
+export interface RiskSignal {
+  id: string;
+  level: "low" | "moderate" | "high";
+  title: string;
+  message: string;
+  nextAction: string;
+}
+
+export interface KnowledgeTwinNode {
+  id: string;
+  label: string;
+  cluster: string;
+  mastery: number;
+  confidence: number;
+  status: "solid" | "developing" | "fragile" | "at-risk";
+}
+
 export interface MissionSummary {
   visible: boolean;
+  missionTitle?: string;
   result: string;
   costBreakdown: { label: string; amount: string }[];
+  metrics?: MissionMetric[];
+  nextActions?: string[];
+  focusAreas?: string[];
+  readinessScore?: number;
+  riskLevel?: "low" | "moderate" | "high";
   timeTaken: string;
   optimization?: OptimizationData;
 }
@@ -115,6 +153,9 @@ export interface MissionState {
   memory: MemoryEntry[];
   skills: Skill[];
   adaptations: AdaptationEvent[];
+  masteryUpdates: MasteryUpdate[];
+  riskSignals: RiskSignal[];
+  knowledgeTwin: KnowledgeTwinNode[];
   trainingMode: boolean;
   demoMode: boolean;
   userInput: string;
@@ -134,6 +175,9 @@ interface MissionContextType extends MissionState {
   addSkill: (skill: Skill) => void;
   updateSkillUsage: (id: string) => void;
   addAdaptation: (event: AdaptationEvent) => void;
+  addMasteryUpdate: (event: MasteryUpdate) => void;
+  addRiskSignal: (event: RiskSignal) => void;
+  setKnowledgeTwin: (nodes: KnowledgeTwinNode[]) => void;
   setTrainingMode: (on: boolean) => void;
   setDemoMode: (on: boolean) => void;
   setUserInput: (input: string) => void;
@@ -142,24 +186,41 @@ interface MissionContextType extends MissionState {
 }
 
 const personalities: Record<string, AgentPersonality> = {
-  planner: { color: "purple", trait: "Strategic & Methodical", tone: "Authoritative", riskTolerance: "low" },
-  call: { color: "green", trait: "Charming & Persuasive", tone: "Warm & Professional", riskTolerance: "medium" },
-  negotiation: { color: "amber", trait: "Aggressive & Analytical", tone: "Sharp & Direct", riskTolerance: "high" },
-  scheduler: { color: "blue", trait: "Precise & Efficient", tone: "Calm & Organized", riskTolerance: "low" },
+  planner: { color: "purple", trait: "Strategic & Adaptive", tone: "Structured", riskTolerance: "low" },
+  tutor: { color: "cyan", trait: "Patient & Explanatory", tone: "Warm", riskTolerance: "low" },
+  solver: { color: "green", trait: "Precise & Analytical", tone: "Direct", riskTolerance: "medium" },
+  proof: { color: "amber", trait: "Rigorous & Formal", tone: "Scholarly", riskTolerance: "low" },
+  revision: { color: "blue", trait: "Systematic & Retentive", tone: "Calm", riskTolerance: "medium" },
+  coach: { color: "purple", trait: "Motivating & Protective", tone: "Encouraging", riskTolerance: "medium" },
   research: { color: "cyan", trait: "Curious & Thorough", tone: "Informative", riskTolerance: "medium" },
+  call: { color: "green", trait: "Warm & Professional", tone: "Focused", riskTolerance: "medium" },
+  negotiation: { color: "amber", trait: "Analytical", tone: "Sharp", riskTolerance: "high" },
+  scheduler: { color: "blue", trait: "Organized", tone: "Calm", riskTolerance: "low" }
 };
 
 const defaultAgents: Agent[] = [
   { id: "planner", name: "Planner Agent", emoji: "🧠", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.planner, listeningTo: null },
-  { id: "call", name: "Call Agent", emoji: "📞", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.call, listeningTo: null },
-  { id: "negotiation", name: "Negotiation Agent", emoji: "💰", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.negotiation, listeningTo: null },
-  { id: "scheduler", name: "Scheduler Agent", emoji: "📅", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.scheduler, listeningTo: null },
-  { id: "research", name: "Research Agent", emoji: "🔍", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.research, listeningTo: null },
+  { id: "tutor", name: "Tutor Agent", emoji: "📚", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.tutor, listeningTo: null },
+  { id: "solver", name: "Solver Agent", emoji: "🧮", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.solver, listeningTo: null },
+  { id: "proof", name: "Proof Agent", emoji: "📐", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.proof, listeningTo: null },
+  { id: "revision", name: "Revision Agent", emoji: "🔁", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.revision, listeningTo: null },
+  { id: "coach", name: "Coach Agent", emoji: "🌟", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.coach, listeningTo: null }
 ];
 
 const defaultCall: CallState = { active: false, caller: "", receiver: "", duration: 0, transcript: [], status: "ended" };
 
-const defaultSummary: MissionSummary = { visible: false, result: "", costBreakdown: [], timeTaken: "" };
+const defaultSummary: MissionSummary = {
+  visible: false,
+  missionTitle: "",
+  result: "",
+  costBreakdown: [],
+  metrics: [],
+  nextActions: [],
+  focusAreas: [],
+  readinessScore: 0,
+  riskLevel: "low",
+  timeTaken: ""
+};
 
 export function createInitialMissionState(): MissionState {
   return {
@@ -168,14 +229,17 @@ export function createInitialMissionState(): MissionState {
     timeline: [],
     call: { ...defaultCall, transcript: [] },
     smsLog: [],
-    summary: { ...defaultSummary, costBreakdown: [] },
+    summary: { ...defaultSummary, costBreakdown: [], metrics: [], nextActions: [], focusAreas: [] },
     reasoning: [],
     memory: [],
     skills: [],
     adaptations: [],
+    masteryUpdates: [],
+    riskSignals: [],
+    knowledgeTwin: [],
     trainingMode: false,
     demoMode: false,
-    userInput: "",
+    userInput: ""
   };
 }
 
@@ -190,19 +254,25 @@ function normalizeMissionState(state: Partial<MissionState>): MissionState {
     call: {
       ...base.call,
       ...state.call,
-      transcript: state.call?.transcript ?? base.call.transcript,
+      transcript: state.call?.transcript ?? base.call.transcript
     },
     smsLog: state.smsLog ?? base.smsLog,
     summary: {
       ...base.summary,
       ...state.summary,
       costBreakdown: state.summary?.costBreakdown ?? base.summary.costBreakdown,
-      optimization: state.summary?.optimization,
+      metrics: state.summary?.metrics ?? base.summary.metrics,
+      nextActions: state.summary?.nextActions ?? base.summary.nextActions,
+      focusAreas: state.summary?.focusAreas ?? base.summary.focusAreas,
+      optimization: state.summary?.optimization
     },
     reasoning: state.reasoning ?? base.reasoning,
     memory: state.memory ?? base.memory,
     skills: state.skills ?? base.skills,
     adaptations: state.adaptations ?? base.adaptations,
+    masteryUpdates: state.masteryUpdates ?? base.masteryUpdates,
+    riskSignals: state.riskSignals ?? base.riskSignals,
+    knowledgeTwin: state.knowledgeTwin ?? base.knowledgeTwin
   };
 }
 
@@ -218,7 +288,7 @@ export function MissionProvider({ children }: { children: ReactNode }) {
   const updateAgent = useCallback((id: string, updates: Partial<Agent>) => {
     setState((s) => ({
       ...s,
-      agents: s.agents.map((a) => (a.id === id ? { ...a, ...updates } : a)),
+      agents: s.agents.map((a) => (a.id === id ? { ...a, ...updates } : a))
     }));
   }, []);
 
@@ -229,7 +299,7 @@ export function MissionProvider({ children }: { children: ReactNode }) {
   const updateTimelineEntry = useCallback((id: string, updates: Partial<TimelineEntry>) => {
     setState((s) => ({
       ...s,
-      timeline: s.timeline.map((t) => (t.id === id ? { ...t, ...updates } : t)),
+      timeline: s.timeline.map((t) => (t.id === id ? { ...t, ...updates } : t))
     }));
   }, []);
 
@@ -240,7 +310,7 @@ export function MissionProvider({ children }: { children: ReactNode }) {
   const addCallTranscript = useCallback((speaker: string, text: string) => {
     setState((s) => ({
       ...s,
-      call: { ...s.call, transcript: [...s.call.transcript, { speaker, text }] },
+      call: { ...s.call, transcript: [...s.call.transcript, { speaker, text }] }
     }));
   }, []);
 
@@ -267,12 +337,24 @@ export function MissionProvider({ children }: { children: ReactNode }) {
   const updateSkillUsage = useCallback((id: string) => {
     setState((s) => ({
       ...s,
-      skills: s.skills.map((sk) => (sk.id === id ? { ...sk, usageCount: sk.usageCount + 1 } : sk)),
+      skills: s.skills.map((sk) => (sk.id === id ? { ...sk, usageCount: sk.usageCount + 1 } : sk))
     }));
   }, []);
 
   const addAdaptation = useCallback((event: AdaptationEvent) => {
     setState((s) => ({ ...s, adaptations: [...s.adaptations, event] }));
+  }, []);
+
+  const addMasteryUpdate = useCallback((event: MasteryUpdate) => {
+    setState((s) => ({ ...s, masteryUpdates: [...s.masteryUpdates, event] }));
+  }, []);
+
+  const addRiskSignal = useCallback((event: RiskSignal) => {
+    setState((s) => ({ ...s, riskSignals: [...s.riskSignals, event] }));
+  }, []);
+
+  const setKnowledgeTwin = useCallback((knowledgeTwin: KnowledgeTwinNode[]) => {
+    setState((s) => ({ ...s, knowledgeTwin }));
   }, []);
 
   const setTrainingMode = useCallback((trainingMode: boolean) => {
@@ -298,10 +380,28 @@ export function MissionProvider({ children }: { children: ReactNode }) {
   return (
     <MissionContext.Provider
       value={{
-        ...state, setMissionStatus, updateAgent, addTimelineEntry, updateTimelineEntry,
-        setCall, addCallTranscript, addSMS, setSummary, addReasoning, addMemory,
-        addSkill, updateSkillUsage, addAdaptation, setTrainingMode,
-        setDemoMode, setUserInput, hydrateMission, resetMission,
+        ...state,
+        setMissionStatus,
+        updateAgent,
+        addTimelineEntry,
+        updateTimelineEntry,
+        setCall,
+        addCallTranscript,
+        addSMS,
+        setSummary,
+        addReasoning,
+        addMemory,
+        addSkill,
+        updateSkillUsage,
+        addAdaptation,
+        addMasteryUpdate,
+        addRiskSignal,
+        setKnowledgeTwin,
+        setTrainingMode,
+        setDemoMode,
+        setUserInput,
+        hydrateMission,
+        resetMission
       }}
     >
       {children}

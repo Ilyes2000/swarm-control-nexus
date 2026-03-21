@@ -2,13 +2,16 @@ import type {
   AdaptationEvent,
   Agent,
   CallState,
+  KnowledgeTwinNode,
+  MasteryUpdate,
   MemoryEntry,
   MissionState,
   MissionSummary,
   ReasoningEntry,
+  RiskSignal,
   Skill,
   SMSMessage,
-  TimelineEntry,
+  TimelineEntry
 } from "@/contexts/MissionContext";
 
 export type MissionMode = "live" | "simulation";
@@ -27,6 +30,9 @@ export interface MissionEventActions {
   addMemory: (entry: MemoryEntry) => void;
   addSkill: (skill: Skill) => void;
   addAdaptation: (event: AdaptationEvent) => void;
+  addMasteryUpdate: (event: MasteryUpdate) => void;
+  addRiskSignal: (event: RiskSignal) => void;
+  setKnowledgeTwin: (nodes: KnowledgeTwinNode[]) => void;
   setTrainingMode: (enabled: boolean) => void;
   setDemoMode: (enabled: boolean) => void;
   setUserInput: (input: string) => void;
@@ -46,6 +52,17 @@ export interface MissionEventMap {
   memory: MemoryEntry;
   skill: Skill;
   adaptation: AdaptationEvent;
+  mastery_updated: MasteryUpdate;
+  risk_signal: RiskSignal;
+  knowledge_twin_updated: KnowledgeTwinNode[];
+  plan_generated: { missionId: string; title: string; focusAreas: string[] };
+  task_created: Record<string, unknown>;
+  session_scheduled: Record<string, unknown>;
+  mission_replanned: Record<string, unknown>;
+  attempt_scored: Record<string, unknown>;
+  hint_revealed: Record<string, unknown>;
+  intervention_created: Record<string, unknown>;
+  exam_mode_started: Record<string, unknown>;
   training_mode: { enabled: boolean };
   error: { message: string; detail?: string };
 }
@@ -102,9 +119,26 @@ export function applyMissionEvent(event: MissionEvent, actions: MissionEventActi
     case "adaptation":
       actions.addAdaptation(event.payload);
       break;
+    case "mastery_updated":
+      actions.addMasteryUpdate(event.payload);
+      break;
+    case "risk_signal":
+      actions.addRiskSignal(event.payload);
+      break;
+    case "knowledge_twin_updated":
+      actions.setKnowledgeTwin(event.payload);
+      break;
     case "training_mode":
       actions.setTrainingMode(event.payload.enabled);
       break;
+    case "plan_generated":
+    case "task_created":
+    case "session_scheduled":
+    case "mission_replanned":
+    case "attempt_scored":
+    case "hint_revealed":
+    case "intervention_created":
+    case "exam_mode_started":
     case "error":
       break;
     default:

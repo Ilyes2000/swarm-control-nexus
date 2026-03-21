@@ -7,7 +7,7 @@ export function SMSLog() {
   return (
     <div className="space-y-2">
       <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
-        💬 SMS Log
+        💬 Coach Feed
       </h3>
 
       <div className="space-y-2 max-h-40 overflow-y-auto scrollbar-thin">
@@ -35,7 +35,7 @@ export function SMSLog() {
 
         {smsLog.length === 0 && (
           <div className="glass-panel p-4 flex items-center justify-center text-muted-foreground text-xs font-mono">
-            No messages yet
+            No coach nudges yet
           </div>
         )}
       </div>

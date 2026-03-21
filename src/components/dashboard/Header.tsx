@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, Zap, Radio, Volume2, VolumeX, SendHorizonal } from "lucide-react";
+import { BrainCircuit, Mic, Zap, Radio, Volume2, VolumeX, SendHorizonal } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -8,15 +9,22 @@ import { Slider } from "@/components/ui/slider";
 import { useMission } from "@/contexts/MissionContext";
 import { useMissionRuntime } from "@/hooks/useMissionRuntime";
 import { setVolume } from "@/lib/audio";
-import { CrabLogo } from "./CrabLogo";
 import { AdaptationIndicator } from "./AdaptationIndicator";
 
 export function Header() {
   const { missionStatus, demoMode, userInput, setUserInput, setDemoMode } = useMission();
   const { startMission, interruptMission, connectionState } = useMissionRuntime();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [vol, setVol] = useState(70);
   const [interruptInput, setInterruptInput] = useState("");
   const [showInterruptFlash, setShowInterruptFlash] = useState(false);
+
+  useEffect(() => {
+    const prompt = searchParams.get("prompt");
+    if (prompt && !userInput) {
+      setUserInput(prompt);
+    }
+  }, [searchParams, setUserInput, userInput]);
 
   const handleDemoToggle = (checked: boolean) => {
     if (missionStatus === "live") {
@@ -60,11 +68,15 @@ export function Header() {
       return;
     }
 
+    if (searchParams.has("prompt")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("prompt");
+      setSearchParams(next, { replace: true });
+    }
     void startMission(userInput, demoMode ? "simulation" : "live");
   };
 
   const isLive = missionStatus === "live";
-  const startLabel = demoMode ? "Start Demo" : "Start Mission";
 
   return (
     <header className="glass-panel px-6 py-3 flex items-center gap-4 relative overflow-hidden">
@@ -83,9 +95,11 @@ export function Header() {
       </AnimatePresence>
 
       <div className="flex items-center gap-2 shrink-0">
-        <CrabLogo />
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary">
+          <BrainCircuit className="h-4 w-4" />
+        </div>
         <h1 className="text-lg font-bold neon-text tracking-tight">
-          ClawSwarm <span className="text-muted-foreground font-normal text-xs">Nexus</span>
+          Study Mission <span className="text-muted-foreground font-normal text-xs">Control</span>
         </h1>
       </div>
 
@@ -129,7 +143,7 @@ export function Header() {
                 value={interruptInput}
                 onChange={(e) => setInterruptInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder='Interrupt: "Change to cheaper option"'
+                placeholder='Interrupt: "Shift tonight into exam sprint mode"'
                 className="bg-warning/10 border-warning/30 text-sm font-mono placeholder:text-warning/50 focus-visible:ring-warning/50 pr-8"
                 maxLength={200}
               />
@@ -160,7 +174,7 @@ export function Header() {
             <Input
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
-              placeholder="Enter your mission..."
+              placeholder="Enter a study mission, e.g. Recover algebra before Friday..."
               className="bg-muted/50 border-border/50 text-sm font-mono"
             />
             <Button size="icon" variant="ghost" className="shrink-0 text-muted-foreground hover:text-primary">
@@ -176,7 +190,7 @@ export function Header() {
         onClick={handleStart}
       >
         <Zap className="w-4 h-4" />
-        {startLabel}
+        {demoMode ? "Start Demo" : "Launch Mission"}
       </Button>
 
       <div className="flex items-center gap-1.5 shrink-0">

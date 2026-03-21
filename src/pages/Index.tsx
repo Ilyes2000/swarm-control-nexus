@@ -81,7 +81,7 @@ const Index = () => {
     <div className="h-screen flex flex-col bg-background overflow-hidden">
       <div className="px-2 pt-2 pb-0">
         <div className="inline-flex items-center rounded-t-lg border border-border/30 border-b-0 bg-card/80 px-3 py-1 text-[10px] font-mono text-foreground">
-          mission-live
+          mission-control
         </div>
       </div>
 

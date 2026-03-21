@@ -6,9 +6,9 @@ export function LiveCallView() {
   const { call } = useMission();
 
   const statusConfig = {
-    ringing: { icon: <Phone className="w-4 h-4" />, label: "Ringing...", color: "text-warning" },
-    connected: { icon: <PhoneCall className="w-4 h-4" />, label: "Connected", color: "text-success" },
-    ended: { icon: <PhoneOff className="w-4 h-4" />, label: "Call Ended", color: "text-muted-foreground" },
+    ringing: { icon: <Phone className="w-4 h-4" />, label: "Tutor Session Starting", color: "text-warning" },
+    connected: { icon: <PhoneCall className="w-4 h-4" />, label: "Live Whiteboard", color: "text-success" },
+    ended: { icon: <PhoneOff className="w-4 h-4" />, label: "Session Archived", color: "text-muted-foreground" },
   };
 
   const config = statusConfig[call.status];
@@ -16,7 +16,7 @@ export function LiveCallView() {
   return (
     <div className="space-y-2">
       <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
-        📞 Live Call
+        📞 Live Tutor
       </h3>
 
       {call.active ? (
@@ -62,7 +62,7 @@ export function LiveCallView() {
         </motion.div>
       ) : (
         <div className="glass-panel p-4 flex items-center justify-center text-muted-foreground text-xs font-mono">
-          No active calls
+          No live tutor session
         </div>
       )}
     </div>

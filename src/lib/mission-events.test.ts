@@ -17,6 +17,9 @@ function createActions(): MissionEventActions {
     addMemory: vi.fn(),
     addSkill: vi.fn(),
     addAdaptation: vi.fn(),
+    addMasteryUpdate: vi.fn(),
+    addRiskSignal: vi.fn(),
+    setKnowledgeTwin: vi.fn(),
     setTrainingMode: vi.fn(),
     setDemoMode: vi.fn(),
     setUserInput: vi.fn(),
@@ -91,5 +94,80 @@ describe("applyMissionEvent", () => {
 
     expect(actions.setMissionStatus).toHaveBeenCalledWith("live");
     expect(actions.setDemoMode).toHaveBeenCalledWith(true);
+  });
+
+  it("maps study-specific mastery and risk events", () => {
+    const actions = createActions();
+
+    applyMissionEvent(
+      {
+        type: "mastery_updated",
+        payload: {
+          topic: "Completing the square",
+          mastery: 64,
+          confidence: 59,
+          trend: "up",
+        },
+        ts: new Date().toISOString(),
+      },
+      actions,
+    );
+
+    applyMissionEvent(
+      {
+        type: "risk_signal",
+        payload: {
+          id: "risk-1",
+          level: "moderate",
+          title: "Confidence dip",
+          message: "The student is hesitating before starting the hard set.",
+          nextAction: "Start with a five-minute warm-up.",
+        },
+        ts: new Date().toISOString(),
+      },
+      actions,
+    );
+
+    applyMissionEvent(
+      {
+        type: "knowledge_twin_updated",
+        payload: [
+          {
+            id: "node-1",
+            label: "Completing the square",
+            cluster: "algebra",
+            mastery: 64,
+            confidence: 59,
+            status: "developing",
+          },
+        ],
+        ts: new Date().toISOString(),
+      },
+      actions,
+    );
+
+    expect(actions.addMasteryUpdate).toHaveBeenCalledWith({
+      topic: "Completing the square",
+      mastery: 64,
+      confidence: 59,
+      trend: "up",
+    });
+    expect(actions.addRiskSignal).toHaveBeenCalledWith({
+      id: "risk-1",
+      level: "moderate",
+      title: "Confidence dip",
+      message: "The student is hesitating before starting the hard set.",
+      nextAction: "Start with a five-minute warm-up.",
+    });
+    expect(actions.setKnowledgeTwin).toHaveBeenCalledWith([
+      {
+        id: "node-1",
+        label: "Completing the square",
+        cluster: "algebra",
+        mastery: 64,
+        confidence: 59,
+        status: "developing",
+      },
+    ]);
   });
 });
