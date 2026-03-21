@@ -1,7 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, Clock, X, RefreshCw, ArrowRight } from "lucide-react";
+import { Check, Clock, X, RefreshCw, ArrowRight, ShieldAlert } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useMission, TimelineEntry } from "@/contexts/MissionContext";
+import { getMissionApiUrl } from "@/lib/mission-client";
 
 const statusIcon: Record<TimelineEntry["status"], React.ReactNode> = {
   success: <Check className="w-3 h-3 text-success" />,
@@ -20,12 +23,31 @@ const statusBg: Record<TimelineEntry["status"], string> = {
 };
 
 export function MissionTimeline() {
-  const { timeline } = useMission();
+  const { timeline, pendingApproval } = useMission();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [showModifyInput, setShowModifyInput] = useState(false);
+  const [modifyNote, setModifyNote] = useState("");
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [timeline.length]);
+
+  useEffect(() => {
+    if (!pendingApproval) {
+      setShowModifyInput(false);
+      setModifyNote("");
+    }
+  }, [pendingApproval]);
+
+  const postApproval = async (command: string, details: Record<string, unknown>) => {
+    await fetch(getMissionApiUrl("/api/mission/interrupt"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ command, details }),
+    });
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -73,6 +95,79 @@ export function MissionTimeline() {
               </div>
             </motion.div>
           ))}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {pendingApproval && (
+            <motion.div
+              key={pendingApproval.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 12 }}
+              className="mb-3 ml-11 rounded-xl border border-warning/30 bg-warning/10 p-3"
+            >
+              <div className="mb-2 flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 text-warning" />
+                <span className="text-[11px] font-semibold uppercase tracking-widest text-warning">
+                  Approval Required
+                </span>
+              </div>
+
+              <div className="space-y-1 text-xs text-foreground/85">
+                <p>
+                  Book table for {pendingApproval.details.partySize} at {pendingApproval.details.venue} at{" "}
+                  {pendingApproval.details.time}?
+                </p>
+                <p className="font-mono text-[11px] text-muted-foreground">
+                  {pendingApproval.details.estimatedCost} • {pendingApproval.details.confidence}% confidence
+                </p>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  className="bg-success hover:bg-success/90 text-success-foreground"
+                  onClick={() => void postApproval("approve", { approvalRequestId: pendingApproval.id })}
+                >
+                  Confirm
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void postApproval("reject", { approvalRequestId: pendingApproval.id })}
+                >
+                  Reject
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setShowModifyInput((value) => !value)}>
+                  Modify
+                </Button>
+              </div>
+
+              {showModifyInput && (
+                <div className="mt-3 flex gap-2">
+                  <Input
+                    value={modifyNote}
+                    onChange={(event) => setModifyNote(event.target.value)}
+                    placeholder="Change to a cheaper or earlier option"
+                    className="h-8 bg-background/60 text-xs font-mono"
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!modifyNote.trim()}
+                    onClick={() =>
+                      void postApproval("modify", {
+                        approvalRequestId: pendingApproval.id,
+                        note: modifyNote.trim(),
+                      })
+                    }
+                  >
+                    Send
+                  </Button>
+                </div>
+              )}
+            </motion.div>
+          )}
         </AnimatePresence>
 
         {timeline.length === 0 && (

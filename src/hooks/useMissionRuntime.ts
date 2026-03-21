@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import type { AutonomyConstraints, AutonomyMode } from "@/contexts/MissionContext";
 import { useMission } from "@/contexts/MissionContext";
 import { getMissionApiUrl, getMissionWsUrl } from "@/lib/mission-client";
 import { applyMissionEvent, type MissionEvent, type MissionMode } from "@/lib/mission-events";
@@ -34,6 +35,7 @@ export function useMissionRuntime() {
     setTrainingMode,
     setDemoMode,
     setUserInput,
+    setPendingApproval,
     hydrateMission,
     resetMission: resetLocalMission,
   } = useMission();
@@ -62,6 +64,7 @@ export function useMissionRuntime() {
       setTrainingMode,
       setDemoMode,
       setUserInput,
+      setPendingApproval,
     }),
     [
       addAdaptation,
@@ -75,6 +78,7 @@ export function useMissionRuntime() {
       setCall,
       setDemoMode,
       setMissionStatus,
+      setPendingApproval,
       setSummary,
       setTrainingMode,
       setUserInput,
@@ -235,7 +239,12 @@ export function useMissionRuntime() {
   }, []);
 
   const startMission = useCallback(
-    async (missionText: string, mode: MissionMode) => {
+    async (
+      missionText: string,
+      mode: MissionMode,
+      autonomyMode: AutonomyMode,
+      autonomyConstraints: AutonomyConstraints,
+    ) => {
       const trimmedMission = missionText.trim();
       if (!trimmedMission) {
         toast.error("Enter a mission before starting.");
@@ -251,6 +260,8 @@ export function useMissionRuntime() {
         await postJson("/api/mission/start", {
           missionText: trimmedMission,
           mode,
+          autonomyMode,
+          autonomyConstraints,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unable to start mission.";
@@ -262,14 +273,17 @@ export function useMissionRuntime() {
   );
 
   const interruptMission = useCallback(
-    async (command: string) => {
-      const trimmedCommand = command.trim();
+    async (input: string | { command: string; details?: Record<string, unknown> }) => {
+      const trimmedCommand = typeof input === "string" ? input.trim() : input.command.trim();
       if (!trimmedCommand) {
         return;
       }
 
       try {
-        await postJson("/api/mission/interrupt", { command: trimmedCommand });
+        await postJson("/api/mission/interrupt", {
+          command: trimmedCommand,
+          ...(typeof input === "string" ? {} : { details: input.details }),
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unable to interrupt mission.";
         setLastError(message);

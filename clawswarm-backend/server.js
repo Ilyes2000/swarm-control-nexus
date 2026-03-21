@@ -45,7 +45,9 @@ app.post("/api/mission/start", async (req, res) => {
   try {
     const result = await orchestrator.startMission({
       missionText: req.body?.missionText,
-      mode: req.body?.mode === "simulation" ? "simulation" : "live"
+      mode: req.body?.mode === "simulation" ? "simulation" : "live",
+      autonomyMode: req.body?.autonomyMode,
+      autonomyConstraints: req.body?.autonomyConstraints
     });
     res.status(202).json(result);
   } catch (error) {
@@ -56,7 +58,8 @@ app.post("/api/mission/start", async (req, res) => {
 app.post("/api/mission/interrupt", async (req, res) => {
   try {
     const result = await orchestrator.interruptMission({
-      command: req.body?.command
+      command: req.body?.command,
+      details: req.body?.details
     });
     res.status(202).json(result);
   } catch (error) {

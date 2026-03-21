@@ -4,7 +4,9 @@ import { Button } from "@/components/ui/button";
 import { useMission } from "@/contexts/MissionContext";
 
 export function MissionSummary() {
-  const { summary } = useMission();
+  const { summary, autonomyMode } = useMission();
+  const autonomyLabel =
+    autonomyMode === "suggest" ? "Suggest Only" : autonomyMode === "confirm" ? "Call + Confirm" : "Auto-Book";
 
   return (
     <AnimatePresence>
@@ -22,6 +24,9 @@ export function MissionSummary() {
                 <CheckCircle className="w-4 h-4 text-success" />
                 Mission Complete
               </h2>
+              <div className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] font-mono text-primary">
+                Autonomy: {autonomyLabel}
+              </div>
               <p className="text-xs text-foreground/80 leading-relaxed">{summary.result}</p>
 
               {/* Optimization Visualization */}

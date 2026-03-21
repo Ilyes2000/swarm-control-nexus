@@ -9,6 +9,7 @@
     "test": "node --test tests"
   },
   "dependencies": {
+    "clawdtalk-client": "github:team-telnyx/clawdtalk-client",
     "express": "^4.21.2",
     "ws": "^8.18.0"
   }

@@ -20,6 +20,7 @@ function createActions(): MissionEventActions {
     setTrainingMode: vi.fn(),
     setDemoMode: vi.fn(),
     setUserInput: vi.fn(),
+    setPendingApproval: vi.fn(),
   };
 }
 
@@ -91,5 +92,52 @@ describe("applyMissionEvent", () => {
 
     expect(actions.setMissionStatus).toHaveBeenCalledWith("live");
     expect(actions.setDemoMode).toHaveBeenCalledWith(true);
+  });
+
+  it("maps approval events to pending approval state", () => {
+    const actions = createActions();
+
+    applyMissionEvent(
+      {
+        type: "approval_request",
+        payload: {
+          id: "ar-1",
+          agentId: "call",
+          action: "book_restaurant",
+          details: {
+            venue: "Bella Notte",
+            time: "7:30 PM",
+            partySize: 2,
+            estimatedCost: "$65/person",
+            confidence: 92,
+          },
+        },
+        ts: new Date().toISOString(),
+      },
+      actions,
+    );
+
+    applyMissionEvent(
+      {
+        type: "approval_cleared",
+        payload: {},
+        ts: new Date().toISOString(),
+      },
+      actions,
+    );
+
+    expect(actions.setPendingApproval).toHaveBeenNthCalledWith(1, {
+      id: "ar-1",
+      agentId: "call",
+      action: "book_restaurant",
+      details: {
+        venue: "Bella Notte",
+        time: "7:30 PM",
+        partySize: 2,
+        estimatedCost: "$65/person",
+        confidence: 92,
+      },
+    });
+    expect(actions.setPendingApproval).toHaveBeenNthCalledWith(2, null);
   });
 });

@@ -40,7 +40,14 @@ export function createInitialMissionState() {
     adaptations: [],
     trainingMode: false,
     demoMode: false,
-    userInput: ""
+    userInput: "",
+    autonomyMode: "confirm",
+    autonomyConstraints: {
+      maxBudget: null,
+      latestTime: null,
+      minConfidence: null
+    },
+    pendingApproval: null
   };
 }
 

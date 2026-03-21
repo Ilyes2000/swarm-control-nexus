@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, Zap, Radio, Volume2, VolumeX, SendHorizonal } from "lucide-react";
+import { ChevronDown, Mic, ShieldCheck, Wand2, Zap, Radio, Volume2, VolumeX, SendHorizonal } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -12,11 +12,22 @@ import { CrabLogo } from "./CrabLogo";
 import { AdaptationIndicator } from "./AdaptationIndicator";
 
 export function Header() {
-  const { missionStatus, demoMode, userInput, setUserInput, setDemoMode } = useMission();
+  const {
+    missionStatus,
+    demoMode,
+    userInput,
+    autonomyMode,
+    autonomyConstraints,
+    setUserInput,
+    setDemoMode,
+    setAutonomyMode,
+    setAutonomyConstraints,
+  } = useMission();
   const { startMission, interruptMission, connectionState } = useMissionRuntime();
   const [vol, setVol] = useState(70);
   const [interruptInput, setInterruptInput] = useState("");
   const [showInterruptFlash, setShowInterruptFlash] = useState(false);
+  const [showConstraints, setShowConstraints] = useState(true);
 
   const handleDemoToggle = (checked: boolean) => {
     if (missionStatus === "live") {
@@ -60,14 +71,19 @@ export function Header() {
       return;
     }
 
-    void startMission(userInput, demoMode ? "simulation" : "live");
+    void startMission(userInput, demoMode ? "simulation" : "live", autonomyMode, autonomyConstraints);
   };
 
   const isLive = missionStatus === "live";
   const startLabel = demoMode ? "Start Demo" : "Start Mission";
+  const autonomyOptions = [
+    { id: "suggest", label: "Suggest", icon: <Mic className="w-3.5 h-3.5" /> },
+    { id: "confirm", label: "Call + Confirm", icon: <ShieldCheck className="w-3.5 h-3.5" /> },
+    { id: "autobook", label: "Auto-Book", icon: <Wand2 className="w-3.5 h-3.5" /> },
+  ] as const;
 
   return (
-    <header className="glass-panel px-6 py-3 flex items-center gap-4 relative overflow-hidden">
+    <header className="glass-panel px-6 py-3 flex flex-wrap items-center gap-4 relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-secondary/5 pointer-events-none" />
 
       <AnimatePresence>
@@ -179,6 +195,32 @@ export function Header() {
         {startLabel}
       </Button>
 
+      <div className="flex items-center gap-1 shrink-0 rounded-full border border-border/60 bg-muted/30 p-1">
+        {autonomyOptions.map((option) => (
+          <Button
+            key={option.id}
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={isLive}
+            onClick={() => {
+              setAutonomyMode(option.id);
+              if (option.id === "autobook") {
+                setShowConstraints(true);
+              }
+            }}
+            className={`h-8 rounded-full px-3 text-[11px] font-mono ${
+              autonomyMode === option.id
+                ? "bg-primary/20 text-primary hover:bg-primary/25"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {option.icon}
+            {option.label}
+          </Button>
+        ))}
+      </div>
+
       <div className="flex items-center gap-1.5 shrink-0">
         <Button
           size="icon"
@@ -195,6 +237,73 @@ export function Header() {
         <span className="text-xs text-muted-foreground font-mono">Demo</span>
         <Switch checked={demoMode} onCheckedChange={handleDemoToggle} disabled={isLive} />
       </div>
+
+      {autonomyMode === "autobook" && !isLive && (
+        <div className="basis-full">
+          <div className="mt-1 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between text-[11px] font-mono text-primary"
+              onClick={() => setShowConstraints((value) => !value)}
+            >
+              <span>Auto-Book Constraints</span>
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showConstraints ? "rotate-180" : ""}`} />
+            </button>
+
+            <AnimatePresence initial={false}>
+              {showConstraints && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mt-3 grid gap-3 md:grid-cols-3"
+                >
+                  <label className="space-y-1">
+                    <span className="text-[10px] font-mono text-muted-foreground">Max Budget</span>
+                    <Input
+                      type="number"
+                      min={50}
+                      max={500}
+                      step={5}
+                      value={autonomyConstraints.maxBudget ?? ""}
+                      onChange={(event) =>
+                        setAutonomyConstraints({
+                          maxBudget: event.target.value ? Number(event.target.value) : null,
+                        })
+                      }
+                      className="h-8 bg-muted/40 text-xs font-mono"
+                    />
+                  </label>
+
+                  <label className="space-y-1">
+                    <span className="text-[10px] font-mono text-muted-foreground">Latest Time</span>
+                    <Input
+                      type="time"
+                      value={autonomyConstraints.latestTime ?? ""}
+                      onChange={(event) => setAutonomyConstraints({ latestTime: event.target.value || null })}
+                      className="h-8 bg-muted/40 text-xs font-mono"
+                    />
+                  </label>
+
+                  <label className="space-y-1">
+                    <div className="flex items-center justify-between text-[10px] font-mono text-muted-foreground">
+                      <span>Min Confidence</span>
+                      <span>{autonomyConstraints.minConfidence ?? 0}%</span>
+                    </div>
+                    <Slider
+                      value={[autonomyConstraints.minConfidence ?? 80]}
+                      onValueChange={(value) => setAutonomyConstraints({ minConfidence: value[0] })}
+                      min={50}
+                      max={100}
+                      step={1}
+                    />
+                  </label>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

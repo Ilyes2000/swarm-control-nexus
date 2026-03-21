@@ -21,6 +21,27 @@ export interface Agent {
   listeningTo: string | null; // id of agent being listened to
 }
 
+export type AutonomyMode = "suggest" | "confirm" | "autobook";
+
+export interface AutonomyConstraints {
+  maxBudget: number | null;
+  latestTime: string | null;
+  minConfidence: number | null;
+}
+
+export interface ApprovalRequest {
+  id: string;
+  agentId: string;
+  action: string;
+  details: {
+    venue: string;
+    time: string;
+    partySize: number;
+    estimatedCost: string;
+    confidence: number;
+  };
+}
+
 export interface MemoryEntry {
   id: string;
   agentId: string;
@@ -118,6 +139,9 @@ export interface MissionState {
   trainingMode: boolean;
   demoMode: boolean;
   userInput: string;
+  autonomyMode: AutonomyMode;
+  autonomyConstraints: AutonomyConstraints;
+  pendingApproval: ApprovalRequest | null;
 }
 
 interface MissionContextType extends MissionState {
@@ -137,6 +161,9 @@ interface MissionContextType extends MissionState {
   setTrainingMode: (on: boolean) => void;
   setDemoMode: (on: boolean) => void;
   setUserInput: (input: string) => void;
+  setAutonomyMode: (mode: AutonomyMode) => void;
+  setAutonomyConstraints: (constraints: Partial<AutonomyConstraints>) => void;
+  setPendingApproval: (request: ApprovalRequest | null) => void;
   hydrateMission: (state: Partial<MissionState>) => void;
   resetMission: () => void;
 }
@@ -160,6 +187,11 @@ const defaultAgents: Agent[] = [
 const defaultCall: CallState = { active: false, caller: "", receiver: "", duration: 0, transcript: [], status: "ended" };
 
 const defaultSummary: MissionSummary = { visible: false, result: "", costBreakdown: [], timeTaken: "" };
+const defaultAutonomyConstraints: AutonomyConstraints = {
+  maxBudget: 150,
+  latestTime: "22:00",
+  minConfidence: 80,
+};
 
 export function createInitialMissionState(): MissionState {
   return {
@@ -176,6 +208,9 @@ export function createInitialMissionState(): MissionState {
     trainingMode: false,
     demoMode: false,
     userInput: "",
+    autonomyMode: "confirm",
+    autonomyConstraints: { ...defaultAutonomyConstraints },
+    pendingApproval: null,
   };
 }
 
@@ -199,6 +234,12 @@ function normalizeMissionState(state: Partial<MissionState>): MissionState {
       costBreakdown: state.summary?.costBreakdown ?? base.summary.costBreakdown,
       optimization: state.summary?.optimization,
     },
+    autonomyMode: state.autonomyMode ?? base.autonomyMode,
+    autonomyConstraints: {
+      ...base.autonomyConstraints,
+      ...state.autonomyConstraints,
+    },
+    pendingApproval: state.pendingApproval ?? base.pendingApproval,
     reasoning: state.reasoning ?? base.reasoning,
     memory: state.memory ?? base.memory,
     skills: state.skills ?? base.skills,
@@ -287,6 +328,24 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, userInput }));
   }, []);
 
+  const setAutonomyMode = useCallback((autonomyMode: AutonomyMode) => {
+    setState((s) => ({ ...s, autonomyMode }));
+  }, []);
+
+  const setAutonomyConstraints = useCallback((constraints: Partial<AutonomyConstraints>) => {
+    setState((s) => ({
+      ...s,
+      autonomyConstraints: {
+        ...s.autonomyConstraints,
+        ...constraints,
+      },
+    }));
+  }, []);
+
+  const setPendingApproval = useCallback((pendingApproval: ApprovalRequest | null) => {
+    setState((s) => ({ ...s, pendingApproval }));
+  }, []);
+
   const hydrateMission = useCallback((nextState: Partial<MissionState>) => {
     setState(normalizeMissionState(nextState));
   }, []);
@@ -301,7 +360,8 @@ export function MissionProvider({ children }: { children: ReactNode }) {
         ...state, setMissionStatus, updateAgent, addTimelineEntry, updateTimelineEntry,
         setCall, addCallTranscript, addSMS, setSummary, addReasoning, addMemory,
         addSkill, updateSkillUsage, addAdaptation, setTrainingMode,
-        setDemoMode, setUserInput, hydrateMission, resetMission,
+        setDemoMode, setUserInput, setAutonomyMode, setAutonomyConstraints,
+        setPendingApproval, hydrateMission, resetMission,
       }}
     >
       {children}

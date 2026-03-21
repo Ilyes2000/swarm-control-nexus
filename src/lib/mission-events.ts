@@ -1,6 +1,7 @@
 import type {
   AdaptationEvent,
   Agent,
+  ApprovalRequest,
   CallState,
   MemoryEntry,
   MissionState,
@@ -30,6 +31,7 @@ export interface MissionEventActions {
   setTrainingMode: (enabled: boolean) => void;
   setDemoMode: (enabled: boolean) => void;
   setUserInput: (input: string) => void;
+  setPendingApproval: (request: ApprovalRequest | null) => void;
 }
 
 export interface MissionEventMap {
@@ -47,6 +49,8 @@ export interface MissionEventMap {
   skill: Skill;
   adaptation: AdaptationEvent;
   training_mode: { enabled: boolean };
+  approval_request: ApprovalRequest;
+  approval_cleared: { id?: string | null };
   error: { message: string; detail?: string };
 }
 
@@ -104,6 +108,12 @@ export function applyMissionEvent(event: MissionEvent, actions: MissionEventActi
       break;
     case "training_mode":
       actions.setTrainingMode(event.payload.enabled);
+      break;
+    case "approval_request":
+      actions.setPendingApproval(event.payload);
+      break;
+    case "approval_cleared":
+      actions.setPendingApproval(null);
       break;
     case "error":
       break;
