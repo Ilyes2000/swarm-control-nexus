@@ -113,6 +113,14 @@ export interface MissionSummary {
   optimization?: OptimizationData;
 }
 
+export interface SourceReference {
+  label: string;
+  url?: string;
+  type: "api" | "web" | "call" | "sms" | "cache" | "fallback";
+  freshness: "live" | "cached" | "stale" | "simulated";
+  verified: boolean;
+}
+
 export interface ReasoningEntry {
   id: string;
   agentId: string;
@@ -122,6 +130,7 @@ export interface ReasoningEntry {
   reasoning: string;
   confidence: number;
   alternatives: string[];
+  sources?: SourceReference[];
   timestamp: string;
 }
 

@@ -554,6 +554,7 @@ export class MissionOrchestrator {
       reasoning: plannerResult.reasoning,
       confidence: plannerResult.confidence,
       alternatives: ["Keep the mission manual", "Research only and stop before bookings"],
+      sources: [{ label: "Mission Input", type: "web", freshness: "live", verified: true }],
       timestamp: nowLabel()
     });
     await this.waitStep(signal, 1);
@@ -621,6 +622,7 @@ export class MissionOrchestrator {
       reasoning: researchResult.reasoning,
       confidence: researchResult.confidence,
       alternatives: ["Shift to a later movie", "Choose a cheaper but lower-rated restaurant"],
+      sources: researchResult.sources,
       timestamp: nowLabel()
     });
     this.addMemory({
@@ -653,6 +655,7 @@ export class MissionOrchestrator {
         reasoning: "The user selected recommendation-only autonomy, so the system should surface the strongest plan without contacting any venue.",
         confidence: 94,
         alternatives: ["Place the calls and ask for approval", "Auto-book within constraints"],
+        sources: [{ label: "Autonomy Config", type: "cache", freshness: "live", verified: true }],
         timestamp: nowLabel()
       });
       this.setSummary({
@@ -795,6 +798,7 @@ export class MissionOrchestrator {
       reasoning: negotiationResult.reasoning,
       confidence: negotiationResult.confidence,
       alternatives: ["Keep full-price booking", "Move to a cheaper but worse-timed show"],
+      sources: [{ label: "Discount DB", type: "cache", freshness: "cached", verified: false }],
       timestamp: nowLabel()
     });
     await this.waitStep(signal, 1);
@@ -848,6 +852,7 @@ export class MissionOrchestrator {
       reasoning: "The dinner ends with a comfortable travel buffer before the selected showtime, preserving seat quality and discount coverage.",
       confidence: schedulerResult.confidence,
       alternatives: ["Later dinner and later show", "Movie first, dinner second"],
+      sources: [{ label: "Itinerary Engine", type: "api", freshness: "live", verified: true }],
       timestamp: nowLabel()
     });
     this.setSummary(schedulerResult.summary);
@@ -1127,6 +1132,7 @@ export class MissionOrchestrator {
       reasoning: "The user override takes precedence over the prior optimization path, so the fastest safe response is to re-plan the remaining booking steps.",
       confidence: 87,
       alternatives: ["Ignore the change request", "Queue it after the current booking"],
+      sources: [{ label: "User Override", type: "web", freshness: "live", verified: true }],
       timestamp: nowLabel()
     });
     this.addAdaptation({

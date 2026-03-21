@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Brain, ChevronRight, Sparkles, TrendingUp } from "lucide-react";
-import { useMission, ReasoningEntry } from "@/contexts/MissionContext";
+import { Brain, ChevronRight, Sparkles, TrendingUp, Globe, Phone, MessageSquare, Database, AlertTriangle, CheckCircle, Link } from "lucide-react";
+import { useMission, ReasoningEntry, SourceReference } from "@/contexts/MissionContext";
 
 function ConfidenceBar({ value }: { value: number }) {
   const color =
@@ -20,6 +20,54 @@ function ConfidenceBar({ value }: { value: number }) {
       <span className="text-[10px] font-mono text-muted-foreground w-8 text-right">{value}%</span>
     </div>
   );
+}
+
+const sourceTypeIcon: Record<SourceReference["type"], typeof Globe> = {
+  web: Globe,
+  call: Phone,
+  sms: MessageSquare,
+  api: Database,
+  cache: Database,
+  fallback: AlertTriangle,
+};
+
+const freshnessBadge: Record<SourceReference["freshness"], { label: string; cls: string }> = {
+  live: { label: "LIVE", cls: "bg-green-500/20 text-green-400" },
+  cached: { label: "CACHED", cls: "bg-amber-500/20 text-amber-400" },
+  stale: { label: "STALE", cls: "bg-red-500/20 text-red-400" },
+  simulated: { label: "SIM", cls: "bg-zinc-500/20 text-zinc-400" },
+};
+
+function SourcePill({ source }: { source: SourceReference }) {
+  const Icon = sourceTypeIcon[source.type] ?? Globe;
+  const badge = freshnessBadge[source.freshness] ?? freshnessBadge.stale;
+  const borderCls = source.verified
+    ? "border-green-500/40"
+    : source.type === "fallback"
+    ? "border-zinc-500/40"
+    : "border-amber-500/40";
+
+  const inner = (
+    <span
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-mono ${borderCls} bg-background/50`}
+    >
+      <Icon className="w-2.5 h-2.5 shrink-0" />
+      <span className="truncate max-w-[100px]">{source.label}</span>
+      <span className={`px-1 rounded text-[8px] font-bold ${badge.cls}`}>{badge.label}</span>
+      {source.verified && <CheckCircle className="w-2.5 h-2.5 text-green-400 shrink-0" />}
+      {source.url && <Link className="w-2.5 h-2.5 text-muted-foreground shrink-0" />}
+    </span>
+  );
+
+  if (source.url) {
+    return (
+      <a href={source.url} target="_blank" rel="noopener noreferrer" className="hover:opacity-80 transition-opacity">
+        {inner}
+      </a>
+    );
+  }
+
+  return inner;
 }
 
 function ReasoningCard({ entry }: { entry: ReasoningEntry }) {
@@ -86,6 +134,19 @@ function ReasoningCard({ entry }: { entry: ReasoningEntry }) {
                           </li>
                         ))}
                       </ul>
+                    </div>
+                  )}
+
+                  {entry.sources && entry.sources.length > 0 && (
+                    <div>
+                      <p className="text-[9px] uppercase tracking-widest text-muted-foreground mb-1 flex items-center gap-1">
+                        <Globe className="w-2.5 h-2.5" /> Sources
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {entry.sources.map((source, i) => (
+                          <SourcePill key={i} source={source} />
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>

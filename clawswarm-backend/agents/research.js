@@ -33,10 +33,20 @@ export async function runResearchAgent({ missionText, llm }) {
     fallback: fallbackLiveText
   });
 
+  const sources = liveResults
+    ? [
+        { label: "Google Places API", type: "api", freshness: "live", verified: true },
+        { label: "Yelp Fusion", type: "api", freshness: "live", verified: true }
+      ]
+    : [
+        { label: "Seeded Venue DB", type: "fallback", freshness: "simulated", verified: false }
+      ];
+
   return {
     ...data,
     usedFallback: !liveResults,
     liveText,
+    sources,
     reasoning: "Ranked the restaurant by cuisine fit, rating, proximity, and same-night availability. Matched the cinema by timing compatibility after dinner and seat quality.",
     confidence: liveResults ? 91 : 88
   };
