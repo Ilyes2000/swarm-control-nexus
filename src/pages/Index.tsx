@@ -9,13 +9,19 @@ import { MemoryPanel } from "@/components/dashboard/MemoryPanel";
 import { MissionSummary } from "@/components/dashboard/MissionSummary";
 import { SkillLibrary } from "@/components/dashboard/SkillLibrary";
 import { AgentNetworkGraph } from "@/components/dashboard/AgentNetworkGraph";
+import { ShadowMissionPanel } from "@/components/dashboard/ShadowMissionPanel";
 
 function MissionDashboard() {
   const [bottomPanel, setBottomPanel] = useState<"reasoning" | "memory" | "skills">("reasoning");
+  const [showShadowPanel, setShowShadowPanel] = useState(false);
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <Header />
+      <Header onShadowAnalysis={() => setShowShadowPanel(true)} />
+
+      {showShadowPanel && (
+        <ShadowMissionPanel onClose={() => setShowShadowPanel(false)} />
+      )}
 
       <div className="flex-1 grid grid-cols-[220px_1fr_260px] gap-2 p-2 min-h-0">
         <div className="flex flex-col gap-2 min-h-0">

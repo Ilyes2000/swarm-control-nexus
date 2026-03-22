@@ -4,7 +4,7 @@ import { Check, Clock, X, RefreshCw, ArrowRight, ShieldAlert } from "lucide-reac
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useMission, TimelineEntry } from "@/contexts/MissionContext";
-import { getMissionApiUrl } from "@/lib/mission-client";
+import { useMissionRuntime } from "@/hooks/useMissionRuntime";
 
 const statusIcon: Record<TimelineEntry["status"], React.ReactNode> = {
   success: <Check className="w-3 h-3 text-success" />,
@@ -24,9 +24,12 @@ const statusBg: Record<TimelineEntry["status"], string> = {
 
 export function MissionTimeline() {
   const { timeline, pendingApproval } = useMission();
+  const { interruptMission } = useMissionRuntime();
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showModifyInput, setShowModifyInput] = useState(false);
   const [modifyNote, setModifyNote] = useState("");
+  const [approvalAction, setApprovalAction] = useState<"approve" | "reject" | "modify" | null>(null);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -36,17 +39,25 @@ export function MissionTimeline() {
     if (!pendingApproval) {
       setShowModifyInput(false);
       setModifyNote("");
+      setApprovalAction(null);
+      setApprovalError(null);
     }
   }, [pendingApproval]);
 
-  const postApproval = async (command: string, details: Record<string, unknown>) => {
-    await fetch(getMissionApiUrl("/api/mission/interrupt"), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ command, details }),
-    });
+  const postApproval = async (
+    command: "approve" | "reject" | "modify",
+    details: Record<string, unknown>,
+  ) => {
+    setApprovalError(null);
+    setApprovalAction(command);
+    const result = await interruptMission({ command, details });
+    if (!result.ok) {
+      setApprovalError(result.error);
+    } else if (command === "modify") {
+      setShowModifyInput(false);
+      setModifyNote("");
+    }
+    setApprovalAction(null);
   };
 
   return (
@@ -132,21 +143,32 @@ export function MissionTimeline() {
                 <Button
                   size="sm"
                   className="bg-success hover:bg-success/90 text-success-foreground"
+                  disabled={approvalAction !== null}
                   onClick={() => void postApproval("approve", { approvalRequestId: pendingApproval.id })}
                 >
-                  Confirm
+                  {approvalAction === "approve" ? "Confirming..." : "Confirm"}
                 </Button>
                 <Button
                   size="sm"
                   variant="outline"
+                  disabled={approvalAction !== null}
                   onClick={() => void postApproval("reject", { approvalRequestId: pendingApproval.id })}
                 >
-                  Reject
+                  {approvalAction === "reject" ? "Rejecting..." : "Reject"}
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setShowModifyInput((value) => !value)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={approvalAction !== null}
+                  onClick={() => setShowModifyInput((value) => !value)}
+                >
                   Modify
                 </Button>
               </div>
+
+              {approvalError && (
+                <p className="mt-2 text-[11px] font-mono text-destructive">{approvalError}</p>
+              )}
 
               {showModifyInput && (
                 <div className="mt-3 flex gap-2">
@@ -159,7 +181,7 @@ export function MissionTimeline() {
                   <Button
                     size="sm"
                     variant="secondary"
-                    disabled={!modifyNote.trim()}
+                    disabled={!modifyNote.trim() || approvalAction !== null}
                     onClick={() =>
                       void postApproval("modify", {
                         approvalRequestId: pendingApproval.id,
@@ -167,7 +189,7 @@ export function MissionTimeline() {
                       })
                     }
                   >
-                    Send
+                    {approvalAction === "modify" ? "Sending..." : "Send"}
                   </Button>
                 </div>
               )}

@@ -19,6 +19,7 @@ export function loadConfig() {
     clawdtalkApiKey: process.env.CLAWDTALK_API_KEY ?? "",
     clawdtalkApiUrl: process.env.CLAWDTALK_API_URL ?? "",
     clawdtalkSkillDir: process.env.CLAWDTALK_SKILL_DIR ?? "",
-    missionVoiceName: process.env.RESEMBLE_VOICE_NAME ?? "ClawSwarm Concierge"
+    missionVoiceName: process.env.RESEMBLE_VOICE_NAME ?? "ClawSwarm Concierge",
+    simulationMode: process.env.SIMULATION_MODE === "true"
   };
 }

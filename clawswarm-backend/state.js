@@ -54,7 +54,9 @@ export function createInitialMissionState() {
       minConfidence: null
     },
     pendingApproval: null,
-    pendingItineraryConfirmation: null
+    pendingItineraryConfirmation: null,
+    shadowPaths: [],
+    shadowStatus: "idle"
   };
 }
 

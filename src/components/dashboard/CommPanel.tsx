@@ -1,6 +1,8 @@
 import { LiveCallView } from "./LiveCallView";
 import { MerchantOffers } from "./MerchantOffers";
 import { SMSLog } from "./SMSLog";
+import { VenueIntelligencePanel } from "./VenueIntelligencePanel";
+import { SkillGenomePanel } from "./SkillGenomePanel";
 
 export function CommPanel() {
   return (
@@ -9,6 +11,8 @@ export function CommPanel() {
         Communications
       </h2>
       <LiveCallView />
+      <VenueIntelligencePanel />
+      <SkillGenomePanel />
       <MerchantOffers />
       <SMSLog />
     </div>

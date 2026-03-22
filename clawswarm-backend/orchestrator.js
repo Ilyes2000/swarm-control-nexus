@@ -9,6 +9,13 @@ import { runResearchAgent } from "./agents/research.js";
 import { runCallerAgent } from "./agents/caller.js";
 import { runNegotiatorAgent } from "./agents/negotiator.js";
 import { runSchedulerAgent } from "./agents/scheduler.js";
+import { updateVenueMemory } from "./venue-memory.js";
+import {
+  recordActivity,
+  retrieveRelevantSkills,
+  recordMission,
+  evolveSkillsFromFailures,
+} from "./skill-genome.js";
 
 function createAbortError() {
   return new Error("Mission run aborted");
@@ -97,11 +104,159 @@ function buildSkillKey(title, scope) {
   return `${title}::${scope || "global"}`;
 }
 
-function summarizeRecommendation(workflow, venueName, details) {
-  if (workflow === "restaurant") {
-    return `${venueName} at ${details?.time || "the preferred dinner slot"}`;
+function formatWorkflowTitle(workflow) {
+  const labelMap = {
+    dinner_and_movie: "Dinner and Movie",
+    restaurant: "Restaurant",
+    cinema: "Cinema",
+    hotel: "Hotel",
+    shopping: "Shopping",
+    travel: "Travel",
+    entertainment: "Entertainment",
+    spa: "Spa",
+    sport: "Fitness",
+    medical: "Medical",
+    travel_dining: "Travel and Dining",
+    mixed: "Mission",
+  };
+  return labelMap[workflow] || workflow.replace(/_/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function summarizeRecommendation(target) {
+  if (!target) {
+    return "No recommendation available";
   }
-  return `${venueName} for ${details?.title || "the selected movie"} at ${details?.time || "the preferred showtime"}`;
+  if (target.workflow === "restaurant") {
+    return `${target.venueName} at ${target.timeLabel || "the preferred reservation time"}`;
+  }
+  if (target.workflow === "cinema" || target.workflow === "entertainment") {
+    return `${target.titleLabel || "Selected show"} at ${target.venueName} at ${target.timeLabel || "the preferred showtime"}`;
+  }
+  if (target.workflow === "hotel") {
+    return `${target.venueName} check-in at ${target.timeLabel || "the requested time"}`;
+  }
+  if (target.workflow === "travel") {
+    return `${target.titleLabel || target.venueName} departing at ${target.timeLabel || "the requested departure"}`;
+  }
+  return target.summaryText || (target.timeLabel ? `${target.venueName} at ${target.timeLabel}` : target.venueName);
+}
+
+function buildWorkflowExecutionPlan(researchResult) {
+  const bookingTargets = Array.isArray(researchResult?.bookingTargets) ? researchResult.bookingTargets : [];
+  const primaryTarget = bookingTargets.find((target) => target.role === "primary") || bookingTargets[0] || null;
+  const secondaryTarget = bookingTargets.find((target) => target.role === "secondary") || bookingTargets[1] || null;
+  return {
+    workflow: researchResult?.workflow || researchResult?.missionType || "mixed",
+    bookingTargets,
+    primaryTarget,
+    secondaryTarget,
+    hasSecondarySequence: Boolean(secondaryTarget),
+  };
+}
+
+function buildSuggestCostBreakdown(executionPlan) {
+  const targets = executionPlan.bookingTargets;
+  if (targets.length === 0) {
+    return [];
+  }
+  const items = targets.map((target) => ({
+    label: `${formatWorkflowTitle(target.workflow)} estimate`,
+    amount: target.estimatedCostLabel || "Quote needed",
+  }));
+  const total = targets.reduce((sum, target) => sum + (Number(target.estimatedTotalCost) || 0), 0);
+  if (total > 0) {
+    items.push({ label: "Projected total", amount: `$${total.toFixed(2)}` });
+  }
+  return items;
+}
+
+function buildFollowUpCostBreakdown(executionPlan, confirmedCount = 0) {
+  const targets = executionPlan.bookingTargets;
+  if (targets.length === 0) {
+    return [];
+  }
+  return targets.slice(0, Math.max(confirmedCount + 1, 1)).map((target) => ({
+    label: `${formatWorkflowTitle(target.workflow)} estimate`,
+    amount: target.estimatedCostLabel || "Quote needed",
+  }));
+}
+
+function deriveMissionContext({ missionText, researchResult, executionPlan }) {
+  const workflow = executionPlan?.workflow || researchResult?.workflow || researchResult?.missionType || "mixed";
+  const primaryTarget = executionPlan?.primaryTarget || null;
+  const secondaryTarget = executionPlan?.secondaryTarget || null;
+  const targetList = executionPlan?.bookingTargets || [];
+  const workflowLabelMap = {
+    dinner_and_movie: "dinner and movie plan",
+    restaurant: "restaurant booking",
+    cinema: "cinema booking",
+    hotel: "hotel booking",
+    shopping: "shopping mission",
+    travel: "travel booking",
+    entertainment: "entertainment booking",
+    spa: "spa booking",
+    sport: "fitness booking",
+    medical: "medical booking",
+    travel_dining: "travel and dining plan",
+    mixed: "mission request",
+  };
+  const workflowLabel = workflowLabelMap[workflow] || "mission request";
+  const primaryLabel = summarizeRecommendation(primaryTarget);
+  const secondaryLabel = secondaryTarget ? summarizeRecommendation(secondaryTarget) : null;
+  const venuePairLabel = targetList.map((target) => target.venueName).join(" and ") || "the selected venues";
+
+  return {
+    missionText,
+    workflow,
+    workflowLabel,
+    primaryLabel,
+    secondaryLabel,
+    planner: {
+      thinkingTask: `Decomposing ${workflowLabel}`,
+      thinkingText: `Analyzing: ${missionText}`,
+      reasoningDecision: `Mission decomposed for ${workflowLabel}.`,
+    },
+    research: {
+      listeningText: `Receiving plan for: ${missionText}`,
+      thinkingTask: `Finding options for ${workflowLabel}`,
+      thinkingText: `Finding options for: ${missionText}`,
+      timelineText: `Searching options for ${workflowLabel}.`,
+      shortlistText: [primaryLabel, secondaryLabel].filter(Boolean).join("; "),
+    },
+    call: {
+      listeningText: `Receiving shortlist: ${venuePairLabel}.`,
+      afterPrimarySms: secondaryTarget
+        ? `Booked ${primaryLabel}. Contacting ${secondaryTarget.venueName} next.`
+        : `Booked ${primaryLabel}.`,
+    },
+    negotiation: {
+      listeningText: `Reviewing confirmed bookings for ${venuePairLabel}.`,
+      thinkingText: `Optimizing cost for ${venuePairLabel}.`,
+      decisionText: secondaryTarget
+        ? `Applied the best available offers for ${primaryTarget?.venueName || "the first venue"} and ${secondaryTarget.venueName}.`
+        : `Applied the best available offers for ${primaryTarget?.venueName || "the selected venue"}.`,
+    },
+    scheduler: {
+      listeningText: `Preparing itinerary for ${venuePairLabel}.`,
+      thinkingText: `Building itinerary for ${venuePairLabel}.`,
+      decisionText: secondaryTarget
+        ? `Final itinerary aligned ${primaryTarget?.venueName || "the first venue"} with ${secondaryTarget.venueName}.`
+        : `Final itinerary aligned the booking for ${primaryTarget?.venueName || "the selected venue"}.`,
+      completionSms: secondaryLabel
+        ? `Mission complete. ${primaryLabel}, then ${secondaryLabel}. Reply CONFIRM or MODIFY.`
+        : `Mission complete. ${primaryLabel}. Reply CONFIRM or MODIFY.`,
+      suggestSummary: secondaryLabel
+        ? `Recommended ${primaryLabel} and ${secondaryLabel}. No calls were placed because Suggest Only mode was active.`
+        : `Recommended ${primaryLabel}. No calls were placed because Suggest Only mode was active.`,
+      primaryFollowUpSummary: primaryLabel
+        ? `Recommendation ready, but ${primaryLabel} was not finalized. It remains the best option for manual follow-up.`
+        : "Recommendation ready, but the first target was not finalized.",
+      secondaryFollowUpSummary: secondaryLabel
+        ? `${primaryLabel} is secured, but ${secondaryLabel} still needs confirmation.`
+        : `${primaryLabel} is secured, but the next booking still needs confirmation.`,
+      finalResult: secondaryLabel ? `${primaryLabel}, then ${secondaryLabel}.` : `${primaryLabel} confirmed.`,
+    },
+  };
 }
 
 export function parseMerchantResponseText(raw) {
@@ -424,6 +579,7 @@ export class MissionOrchestrator {
     this.state.userInput = missionText.trim();
     this.state.demoMode = mode === "simulation";
     this.state.autonomyMode = ["suggest", "confirm", "autobook"].includes(autonomyMode) ? autonomyMode : "autobook";
+    recordActivity(String(this.currentRunId), { type: "mission_start", missionText: missionText.trim(), mode });
     this.state.autonomyConstraints = normalizeAutonomyConstraints(autonomyConstraints);
     this.state.pendingApproval = null;
     this.broadcastSnapshot();
@@ -436,6 +592,8 @@ export class MissionOrchestrator {
         }
 
         this.resetAllAgentsToIdle();
+        this.setPendingApproval(null);
+        this.setPendingItineraryConfirmation(null);
         const message = error instanceof Error ? error.message : "Mission failed";
         this.broadcast("error", { message });
         this.addTimelineEntry({
@@ -488,6 +646,9 @@ export class MissionOrchestrator {
             return;
           }
 
+          this.resetAllAgentsToIdle();
+          this.setPendingApproval(null);
+          this.setPendingItineraryConfirmation(null);
           const message = error instanceof Error ? error.message : "Mission update failed";
           this.broadcast("error", { message });
           this.addTimelineEntry({
@@ -511,6 +672,10 @@ export class MissionOrchestrator {
 
       this.resolvePendingApproval({ command, details });
       return { ok: true };
+    }
+
+    if (!this.state.pendingApproval && isApprovalCommand(command)) {
+      throw new Error("Approval request is no longer active");
     }
 
     if (this.state.pendingItineraryConfirmation && (command === "itinerary_confirm" || command === "itinerary_modify")) {
@@ -547,6 +712,9 @@ export class MissionOrchestrator {
           return;
         }
 
+        this.resetAllAgentsToIdle();
+        this.setPendingApproval(null);
+        this.setPendingItineraryConfirmation(null);
         const message = error instanceof Error ? error.message : "Mission update failed";
         this.broadcast("error", { message });
         this.addTimelineEntry({
@@ -584,6 +752,9 @@ export class MissionOrchestrator {
         return;
       }
 
+      this.resetAllAgentsToIdle();
+      this.setPendingApproval(null);
+      this.setPendingItineraryConfirmation(null);
       const message = error instanceof Error ? error.message : "Mission update failed";
       this.broadcast("error", { message });
       this.addTimelineEntry({
@@ -735,7 +906,11 @@ export class MissionOrchestrator {
   async awaitApprovalDecision({ signal, mode, approvalRequest, smsText, autoApproveInSimulation = false }) {
     this.setPendingApproval(approvalRequest);
     if (smsText) {
-      await this.sendUserSms(smsText);
+      try {
+        await this.sendUserSms(smsText);
+      } catch (err) {
+        console.warn("Approval SMS failed, continuing with dashboard-only prompt.", err);
+      }
     }
 
     return new Promise((resolve, reject) => {
@@ -941,6 +1116,7 @@ export class MissionOrchestrator {
   }
 
   async runMission({ missionText, mode, signal }) {
+    const initialMissionContext = deriveMissionContext({ missionText });
     this.addMemory({
       id: this.nextId("memory"),
       agentId: "planner",
@@ -960,8 +1136,8 @@ export class MissionOrchestrator {
 
     this.updateAgent("planner", {
       status: "thinking",
-      currentTask: "Decomposing mission",
-      liveText: "Analyzing mission requirements.",
+      currentTask: initialMissionContext.planner.thinkingTask,
+      liveText: initialMissionContext.planner.thinkingText,
       confidence: 75
     });
     const plannerTimelineId = this.nextId("timeline");
@@ -990,7 +1166,7 @@ export class MissionOrchestrator {
       agentId: "planner",
       agentEmoji: "🧠",
       agentName: "Planner Agent",
-      decision: "Mission decomposed into research, calls, optimization, and scheduling.",
+      decision: initialMissionContext.planner.reasoningDecision,
       reasoning: plannerResult.reasoning,
       confidence: plannerResult.confidence,
       alternatives: ["Keep the mission manual", "Research only and stop before bookings"],
@@ -1012,7 +1188,7 @@ export class MissionOrchestrator {
       status: "listening",
       listeningTo: "planner",
       currentTask: "Receiving plan",
-      liveText: "",
+      liveText: initialMissionContext.research.listeningText,
       confidence: 0
     });
     await this.waitStep(signal, 0.5);
@@ -1020,8 +1196,8 @@ export class MissionOrchestrator {
     this.updateAgent("research", {
       status: "thinking",
       listeningTo: null,
-      currentTask: "Finding dinner and movie options",
-      liveText: "Scanning trusted venue options.",
+      currentTask: initialMissionContext.research.thinkingTask,
+      liveText: initialMissionContext.research.thinkingText,
       confidence: 61
     });
     const researchTimelineId = this.nextId("timeline");
@@ -1031,12 +1207,15 @@ export class MissionOrchestrator {
       agentId: "research",
       agentEmoji: "🔍",
       agentName: "Research Agent",
-      description: "Searching restaurants and cinema listings.",
+      description: initialMissionContext.research.timelineText,
       status: "pending"
     });
     await this.waitStep(signal, 1);
 
     const researchResult = await runResearchAgent({ missionText, llm: this.llm });
+    const executionPlan = buildWorkflowExecutionPlan(researchResult);
+    const missionContext = deriveMissionContext({ missionText, researchResult, executionPlan });
+    const hasSecondarySequence = executionPlan.hasSecondarySequence;
     this.ensureActiveRun(signal);
     if (researchResult.usedFallback) {
       this.addAdaptation({
@@ -1068,70 +1247,60 @@ export class MissionOrchestrator {
       agentId: "research",
       agentEmoji: "🔍",
       agentName: "Research Agent",
-      decision: `Selected ${researchResult.restaurant.name} and ${researchResult.cinema.name}.`,
+      decision: `Selected ${executionPlan.bookingTargets.map((target) => target.venueName).join(" and ")}.`,
       reasoning: researchResult.reasoning,
       confidence: researchResult.confidence,
-      alternatives: ["Shift to a later movie", "Choose a cheaper but lower-rated restaurant"],
+      alternatives: ["Choose a later slot", "Choose a cheaper but lower-rated option"],
       sources: researchResult.sources,
       timestamp: nowLabel()
     });
-    this.addReasoning({
-      id: this.nextId("reasoning"),
-      agentId: "research",
-      agentEmoji: "🍝",
-      agentName: "Restaurant Provenance",
-      decision: `Restaurant recommendation: ${researchResult.restaurant.name}`,
-      reasoning: `Recommended ${researchResult.restaurant.name} for ${researchResult.restaurant.reservationTime} based on cuisine fit, proximity, and booking path confidence.`,
-      confidence: researchResult.confidence,
-      alternatives: ["Choose a lower-rated but cheaper venue"],
-      sources: researchResult.recommendationSources?.restaurant ?? researchResult.sources,
-      timestamp: nowLabel()
-    });
-    this.addReasoning({
-      id: this.nextId("reasoning"),
-      agentId: "research",
-      agentEmoji: "🎬",
-      agentName: "Cinema Provenance",
-      decision: `Cinema recommendation: ${researchResult.cinema.name}`,
-      reasoning: `Recommended ${researchResult.cinema.name} for ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime} based on itinerary fit and source freshness.`,
-      confidence: researchResult.confidence,
-      alternatives: ["Choose a later show with cheaper seats"],
-      sources: researchResult.recommendationSources?.cinema ?? researchResult.sources,
-      timestamp: nowLabel()
-    });
-    this.addRecommendationInsight({
-      id: this.nextId("recommendation"),
-      workflow: "restaurant",
-      venueName: researchResult.restaurant.name,
-      summary: summarizeRecommendation("restaurant", researchResult.restaurant.name, {
-        time: researchResult.restaurant.reservationTime
-      }),
-      confidence: researchResult.confidence,
-      sources: researchResult.recommendationSources?.restaurant ?? researchResult.sources,
-      primaryBookingPath: researchResult.recommendationSources?.restaurant?.[0]?.bookingPath ?? "unknown",
-      primaryRisk: researchResult.recommendationSources?.restaurant?.[0]?.risk ?? "medium",
-      fallbackMode: researchResult.usedFallback
-    });
-    this.addRecommendationInsight({
-      id: this.nextId("recommendation"),
-      workflow: "cinema",
-      venueName: researchResult.cinema.name,
-      summary: summarizeRecommendation("cinema", researchResult.cinema.name, {
-        time: researchResult.cinema.showtime,
-        title: researchResult.cinema.movieTitle
-      }),
-      confidence: researchResult.confidence,
-      sources: researchResult.recommendationSources?.cinema ?? researchResult.sources,
-      primaryBookingPath: researchResult.recommendationSources?.cinema?.[0]?.bookingPath ?? "unknown",
-      primaryRisk: researchResult.recommendationSources?.cinema?.[0]?.risk ?? "medium",
-      fallbackMode: researchResult.usedFallback
-    });
+    const insightEmojiByWorkflow = {
+      restaurant: "🍝",
+      cinema: "🎬",
+      entertainment: "🎟️",
+      hotel: "🏨",
+      travel: "✈️",
+      shopping: "🛍️",
+      spa: "💆",
+      sport: "🏋️",
+      medical: "🏥"
+    };
+    for (const target of executionPlan.bookingTargets) {
+      const targetSources =
+        target.role === "primary"
+          ? researchResult.recommendationSources?.primary ?? researchResult.sources
+          : researchResult.recommendationSources?.secondary ?? researchResult.sources;
+      const workflowTitle = formatWorkflowTitle(target.workflow);
+      this.addReasoning({
+        id: this.nextId("reasoning"),
+        agentId: "research",
+        agentEmoji: insightEmojiByWorkflow[target.workflow] || "📍",
+        agentName: `${workflowTitle} Provenance`,
+        decision: `${workflowTitle} recommendation: ${target.venueName}`,
+        reasoning: `Recommended ${summarizeRecommendation(target)} based on workflow fit, source freshness, and booking-path confidence.`,
+        confidence: researchResult.confidence,
+        alternatives: ["Choose a lower-rated but cheaper venue"],
+        sources: targetSources,
+        timestamp: nowLabel()
+      });
+      this.addRecommendationInsight({
+        id: this.nextId("recommendation"),
+        workflow: target.workflow,
+        venueName: target.venueName,
+        summary: summarizeRecommendation(target),
+        confidence: researchResult.confidence,
+        sources: targetSources,
+        primaryBookingPath: targetSources?.[0]?.bookingPath ?? "unknown",
+        primaryRisk: targetSources?.[0]?.risk ?? "medium",
+        fallbackMode: researchResult.usedFallback
+      });
+    }
     this.addMemory({
       id: this.nextId("memory"),
       agentId: "research",
       type: "context",
       label: "Research shortlist",
-      value: `${researchResult.restaurant.name} at ${researchResult.restaurant.reservationTime}; ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}`,
+      value: missionContext.research.shortlistText,
       timestamp: nowLabel(),
       scope: "mission:recommendations"
     });
@@ -1145,7 +1314,7 @@ export class MissionOrchestrator {
         agentId: "planner",
         agentEmoji: "💡",
         agentName: "Planner Agent",
-        description: `Suggest Only mode: recommend ${researchResult.restaurant.name} at ${researchResult.restaurant.reservationTime} and ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}.`,
+        description: `Suggest Only mode: recommend ${missionContext.research.shortlistText}.`,
         status: "success"
       });
       this.addReasoning({
@@ -1170,12 +1339,8 @@ export class MissionOrchestrator {
       });
       this.publishSummary({
         visible: true,
-        result: `Recommended ${researchResult.restaurant.name} for ${researchResult.restaurant.reservationTime} and ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}. No calls were placed because Suggest Only mode was active.`,
-        costBreakdown: [
-          { label: "Dinner estimate", amount: "$85.00" },
-          { label: "Movie estimate", amount: "$33.75" },
-          { label: "Projected total", amount: "$118.75" }
-        ],
+        result: missionContext.scheduler.suggestSummary,
+        costBreakdown: buildSuggestCostBreakdown(executionPlan),
         timeTaken: "under 15 seconds"
       });
       this.setMissionStatus("completed", mode);
@@ -1187,79 +1352,50 @@ export class MissionOrchestrator {
       status: "listening",
       listeningTo: "research",
       currentTask: "Receiving venue shortlist",
-      liveText: "",
+      liveText: missionContext.call.listeningText,
       confidence: 0
     });
     await this.waitStep(signal, 0.5);
 
-    const dinnerBooked = await this.handleCallSequence({
-      signal,
-      mode,
-      workflow: "restaurant",
-      targetName: researchResult.restaurant.name,
-      targetPhone: researchResult.restaurant.phone,
-      reservationLine: `Hi, I need a dinner reservation for two at ${researchResult.restaurant.reservationTime}.`,
-      description: `Calling ${researchResult.restaurant.name} for a reservation`,
-      successDescription: `Dinner booked at ${researchResult.restaurant.name} for ${researchResult.restaurant.reservationTime}`,
-      memoryLabel: "Dinner booking",
-      memoryValue: `${researchResult.restaurant.name} confirmed for ${researchResult.restaurant.reservationTime}`,
-      bookingAction: "book_restaurant",
-      bookingDetails: {
-        venue: researchResult.restaurant.name,
-        time: researchResult.restaurant.reservationTime,
-        partySize: 2,
-        estimatedCost: "$85 total",
-        confidence: 87
-      },
-      estimatedTotalCost: 85
-    });
+    const primaryTarget = executionPlan.primaryTarget;
+    const secondaryTarget = executionPlan.secondaryTarget;
 
-    if (!dinnerBooked) {
+    const primaryBooked = primaryTarget
+      ? await this.handleCallSequence({
+          signal,
+          mode,
+          target: primaryTarget
+        })
+      : false;
+
+    if (!primaryBooked) {
       this.publishSummary({
         visible: true,
-        result: `Recommendation ready, but the dinner booking was not finalized. ${researchResult.restaurant.name} at ${researchResult.restaurant.reservationTime} remains the best option for manual follow-up.`,
-        costBreakdown: [
-          { label: "Dinner estimate", amount: "$85.00" },
-          { label: "Movie estimate", amount: "$33.75" }
-        ],
+        result: missionContext.scheduler.primaryFollowUpSummary,
+        costBreakdown: buildFollowUpCostBreakdown(executionPlan, 0),
         timeTaken: "under 25 seconds"
       });
       this.setMissionStatus("completed", mode);
       return;
     }
 
-    await this.safeSendUserSms(`Booked dinner at ${researchResult.restaurant.name} for ${researchResult.restaurant.reservationTime}. Calling the cinema next.`);
+    if (hasSecondarySequence) {
+      await this.safeSendUserSms(missionContext.call.afterPrimarySms);
+    }
 
-    const movieBooked = await this.handleCallSequence({
-      signal,
-      mode,
-      workflow: "cinema",
-      targetName: researchResult.cinema.name,
-      targetPhone: researchResult.cinema.phone,
-      reservationLine: `Hello, I want two ${researchResult.cinema.seatType} seats for ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}.`,
-      description: `Calling ${researchResult.cinema.name} for movie seats`,
-      successDescription: `Movie seats secured for ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}`,
-      memoryLabel: "Movie booking",
-      memoryValue: `${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime} with ${researchResult.cinema.seatType} seats`,
-      bookingAction: "book_cinema",
-      bookingDetails: {
-        venue: researchResult.cinema.name,
-        time: researchResult.cinema.showtime,
-        partySize: 2,
-        estimatedCost: "$33.75 total",
-        confidence: 91
-      },
-      estimatedTotalCost: 33.75
-    });
+    const secondaryBooked = hasSecondarySequence && secondaryTarget
+      ? await this.handleCallSequence({
+          signal,
+          mode,
+          target: secondaryTarget
+        })
+      : true;
 
-    if (!movieBooked) {
+    if (hasSecondarySequence && !secondaryBooked) {
       this.publishSummary({
         visible: true,
-        result: `Dinner is secured at ${researchResult.restaurant.name}, but the movie booking still needs confirmation. ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime} remains the recommended show.`,
-        costBreakdown: [
-          { label: "Dinner", amount: "$85.00" },
-          { label: "Movie estimate", amount: "$33.75" }
-        ],
+        result: missionContext.scheduler.secondaryFollowUpSummary,
+        costBreakdown: buildFollowUpCostBreakdown(executionPlan, 1),
         timeTaken: "under 30 seconds"
       });
       this.setMissionStatus("completed", mode);
@@ -1270,7 +1406,7 @@ export class MissionOrchestrator {
       status: "listening",
       listeningTo: "call",
       currentTask: "Reviewing booking costs",
-      liveText: "",
+      liveText: missionContext.negotiation.listeningText,
       confidence: 0
     });
     await this.waitStep(signal, 0.5);
@@ -1279,7 +1415,7 @@ export class MissionOrchestrator {
       status: "thinking",
       listeningTo: null,
       currentTask: "Optimizing total cost",
-      liveText: "Checking stackable offers and discounts.",
+      liveText: missionContext.negotiation.thinkingText,
       confidence: 74
     });
     const negotiationTimelineId = this.nextId("timeline");
@@ -1289,7 +1425,7 @@ export class MissionOrchestrator {
       agentId: "negotiation",
       agentEmoji: "💰",
       agentName: "Negotiation Agent",
-      description: "Comparing available discounts.",
+      description: `Optimizing ${missionContext.workflowLabel}.`,
       status: "pending"
     });
     await this.waitStep(signal, 1);
@@ -1307,7 +1443,7 @@ export class MissionOrchestrator {
       agentId: "negotiation",
       agentEmoji: "💰",
       agentName: "Negotiation Agent",
-      decision: "Applied the best available dinner and cinema discounts.",
+      decision: missionContext.negotiation.decisionText,
       reasoning: negotiationResult.reasoning,
       confidence: negotiationResult.confidence,
       alternatives: ["Keep full-price booking", "Move to a cheaper but worse-timed show"],
@@ -1329,7 +1465,7 @@ export class MissionOrchestrator {
       status: "listening",
       listeningTo: "negotiation",
       currentTask: "Preparing final itinerary",
-      liveText: "",
+      liveText: missionContext.scheduler.listeningText,
       confidence: 0
     });
     await this.waitStep(signal, 0.5);
@@ -1338,7 +1474,7 @@ export class MissionOrchestrator {
       status: "thinking",
       listeningTo: null,
       currentTask: "Building itinerary",
-      liveText: "Sequencing dinner, transit, and showtime.",
+      liveText: missionContext.scheduler.thinkingText,
       confidence: 82
     });
     const schedulerTimelineId = this.nextId("timeline");
@@ -1348,7 +1484,7 @@ export class MissionOrchestrator {
       agentId: "scheduler",
       agentEmoji: "📅",
       agentName: "Scheduler Agent",
-      description: "Building final itinerary.",
+      description: `Building final itinerary for ${missionContext.workflowLabel}.`,
       status: "pending"
     });
     await this.waitStep(signal, 1);
@@ -1370,10 +1506,10 @@ export class MissionOrchestrator {
       agentId: "scheduler",
       agentEmoji: "📅",
       agentName: "Scheduler Agent",
-      decision: "Final itinerary aligned dinner timing with the best movie slot.",
-      reasoning: "The dinner ends with a comfortable travel buffer before the selected showtime, preserving seat quality and discount coverage.",
+      decision: missionContext.scheduler.decisionText,
+      reasoning: `The final itinerary keeps the ${missionContext.workflowLabel} coherent while preserving timing and pricing confidence.`,
       confidence: schedulerResult.confidence,
-      alternatives: ["Later dinner and later show", "Movie first, dinner second"],
+      alternatives: ["Move to a later timing window", "Reorder the booking sequence"],
       sources: [{
         label: "Itinerary Engine",
         type: "api",
@@ -1385,17 +1521,20 @@ export class MissionOrchestrator {
       }],
       timestamp: nowLabel()
     });
-    this.publishSummary(schedulerResult.summary);
+    this.publishSummary({
+      ...schedulerResult.summary,
+      result: missionContext.scheduler.finalResult,
+    });
     this.addTimelineEntry({
       id: this.nextId("timeline"),
       timestamp: nowLabel(),
       agentId: "planner",
       agentEmoji: "✅",
       agentName: "Planner Agent",
-      description: "Mission completed successfully.",
+      description: `Mission completed for ${missionContext.workflowLabel}.`,
       status: "success"
     });
-    await this.safeSendUserSms(`Mission complete. Dinner at ${researchResult.restaurant.name} ${researchResult.restaurant.reservationTime}, then ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}. Reply CONFIRM or MODIFY.`);
+    await this.safeSendUserSms(missionContext.scheduler.completionSms);
     this.setPendingItineraryConfirmation({
       id: this.nextId("itinerary-confirmation"),
       kind: "itinerary_confirmation"
@@ -1411,24 +1550,40 @@ export class MissionOrchestrator {
     await this.waitStep(signal, 0.5);
     this.setTrainingMode(false);
     this.updateAgent("scheduler", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+
+    // Record mission and evolve skills from failures (MetaClaw genome)
+    const missionRecord = recordMission(this.state, {
+      successCount: this.state.merchantOffers.filter(o => o.finalResolution === "booked").length,
+      totalCalls: this.state.merchantOffers.length,
+    });
+    evolveSkillsFromFailures(missionRecord, this.broadcast.bind(this)).catch(() => {});
+
     this.setMissionStatus("completed", mode);
   }
 
   async handleCallSequence({
     signal,
     mode,
-    workflow,
-    targetName,
-    targetPhone,
-    reservationLine,
-    description,
-    successDescription,
-    memoryLabel,
-    memoryValue,
-    bookingAction,
-    bookingDetails,
-    estimatedTotalCost
+    target
   }) {
+    const workflow = target.workflow;
+    const targetName = target.venueName;
+    const targetPhone = target.phone;
+    const reservationLine = target.reservationLine;
+    const description = target.description;
+    const successDescription = target.successDescription;
+    const memoryLabel = target.memoryLabel;
+    const memoryValue = target.memoryValue;
+    const bookingAction = target.bookingAction;
+    const bookingDetails = {
+      venue: target.venueName,
+      time: target.timeLabel,
+      partySize: target.partySize,
+      estimatedCost: target.estimatedCostLabel,
+      confidence: target.confidence
+    };
+    const estimatedTotalCost = target.estimatedTotalCost;
+
     this.updateAgent("call", {
       status: "calling",
       listeningTo: null,
@@ -1460,6 +1615,13 @@ export class MissionOrchestrator {
     });
     await this.waitStep(signal, 1);
 
+    // Inject relevant skills from genome before the call
+    const venueKey = targetName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const injectedSkills = retrieveRelevantSkills({ venueKey, agentId: "call", category: "negotiation" });
+    if (injectedSkills.length > 0) {
+      this.broadcast("skills_injected", { skills: injectedSkills, venueName: targetName });
+    }
+
     const callResult = await runCallerAgent({
       businessName: targetName,
       businessPhone: targetPhone,
@@ -1470,6 +1632,17 @@ export class MissionOrchestrator {
       missionVoiceName: this.config.missionVoiceName
     });
     this.ensureActiveRun(signal);
+
+    // Broadcast venue intelligence to dashboard
+    if (callResult.venueIntelligence) {
+      this.broadcast("venue_intelligence", {
+        venueName:         targetName,
+        intelligence:      callResult.venueIntelligence,
+        adaptedTone:       callResult.toneUsed,
+        adaptedLanguage:   callResult.languageUsed,
+        relationshipLevel: callResult.relationshipLevel,
+      });
+    }
     const providerMode = mode === "simulation" ? "simulation" : callResult.provider === "clawdtalk" ? "live" : "fallback";
     const transcriptMode = providerMode === "live" && Array.isArray(callResult.raw?.transcript) ? "live" : callResult.transcript.length > 0 ? "simulated" : "none";
 
@@ -1534,10 +1707,34 @@ export class MissionOrchestrator {
     });
     this.ensureActiveRun(signal);
 
+    // Update venue memory with outcome and broadcast
+    const updatedMemory = updateVenueMemory(targetName, merchantResponse);
+    this.broadcast("venue_memory_updated", {
+      venueName:        targetName,
+      memory:           updatedMemory,
+      newSkillLearned:  updatedMemory.notes.slice(-1)[0] || null,
+    });
+
+    // Create a skill if a new negotiation pattern was learned
+    if (updatedMemory.escalationRules.length > 0 && updatedMemory.callCount >= 2) {
+      this.upsertSkill({
+        id:               this.nextId("skill"),
+        title:            `${targetName} negotiation pattern`,
+        description:      updatedMemory.escalationRules.slice(-1)[0],
+        source:           `Learned from ${updatedMemory.callCount} calls to ${targetName}`,
+        version:          updatedMemory.callCount,
+        usageCount:       1,
+        createdAt:        nowLabel(),
+        agentId:          "call",
+        scope:            `venue:${targetName.toLowerCase()}`,
+        improvementLabel: `${updatedMemory.successRate}% success rate`,
+      });
+    }
+
     const merchantOffer = {
       id: this.nextId("merchant-offer"),
       workflow,
-      requestLabel: workflow === "restaurant" ? "Dinner booking request" : "Cinema booking request",
+      requestLabel: target.requestLabel,
       venueName: targetName,
       offerType: merchantResponse.offerType,
       merchantOutcome: merchantResponse.offerType,
@@ -1688,7 +1885,7 @@ export class MissionOrchestrator {
           details: {
             ...bookingDetails,
             workflow,
-            actionLabel: workflow === "restaurant" ? "Confirm restaurant booking" : "Confirm cinema booking",
+            actionLabel: target.actionLabel,
             pauseReason: "Approval is required before the final booking step."
           }
         },
@@ -1760,7 +1957,7 @@ export class MissionOrchestrator {
             details: {
               ...bookingDetails,
               workflow,
-              actionLabel: workflow === "restaurant" ? "Approve restaurant booking" : "Approve cinema booking",
+              actionLabel: target.actionLabel,
               pauseReason: `Paused because ${gate.reasons.join(", ")}.`
             }
           },
@@ -1964,5 +2161,97 @@ export class MissionOrchestrator {
     this.updateAgent("planner", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
     await this.safeSendUserSms(`Plan updated. Your request "${command}" has been folded into the live mission.`);
     this.setMissionStatus("completed", mode);
+  }
+
+  async startShadowMission({ missionText, mode = "simulation" }) {
+    if (!missionText?.trim()) throw new Error("missionText is required");
+
+    this.state.shadowPaths = [];
+    this.state.shadowStatus = "running";
+    this.broadcast("shadow_status", { status: "running" });
+
+    const strategies = ["best_value", "fastest", "premium"];
+
+    const paths = await Promise.all(
+      strategies.map(strategy =>
+        this.runShadowPath({ missionText, strategy, mode })
+      )
+    );
+
+    this.state.shadowPaths = paths;
+    this.state.shadowStatus = "ready";
+    this.broadcast("shadow_paths", { paths });
+    this.broadcast("shadow_status", { status: "ready" });
+
+    return { ok: true, paths };
+  }
+
+  async runShadowPath({ missionText, strategy, mode }) {
+    const plannerResult = await runPlannerAgent({ missionText, llm: this.llm });
+    const researchResult = await runResearchAgent({ missionText, llm: this.llm });
+
+    const strategyConfig = {
+      best_value: {
+        label: "Best Value",
+        costMultiplier: 0.85,
+        confidenceBonus: 4,
+        noShowRisk: "low",
+        color: "green",
+        description: "Lowest cost with optimized discounts"
+      },
+      fastest: {
+        label: "Fastest",
+        costMultiplier: 0.95,
+        confidenceBonus: 0,
+        noShowRisk: "medium",
+        color: "amber",
+        description: "Quickest execution, nearest venues"
+      },
+      premium: {
+        label: "Premium",
+        costMultiplier: 1.25,
+        confidenceBonus: 7,
+        noShowRisk: "very low",
+        color: "coral",
+        description: "Highest rated venues, maximum confidence"
+      }
+    };
+
+    const cfg = strategyConfig[strategy];
+    const baseCost = 118.75;
+    const estimatedCost = parseFloat((baseCost * cfg.costMultiplier).toFixed(2));
+    const savings = parseFloat((baseCost - estimatedCost).toFixed(2));
+    const confidence = Math.min(99, 88 + cfg.confidenceBonus);
+    const shadowPlan = buildWorkflowExecutionPlan(researchResult);
+    const shadowPrimary = shadowPlan.primaryTarget;
+    const shadowSecondary = shadowPlan.secondaryTarget;
+
+    return {
+      id: `shadow-${strategy}-${Date.now()}`,
+      strategy,
+      label: cfg.label,
+      color: cfg.color,
+      description: cfg.description,
+      estimatedCost,
+      estimatedCostLabel: `${estimatedCost.toFixed(2)}`,
+      savings: savings > 0 ? savings : 0,
+      savingsLabel: savings > 0 ? `${savings.toFixed(2)} saved` : "No savings",
+      confidence,
+      confidenceLabel: `${confidence}%`,
+      noShowRisk: cfg.noShowRisk,
+      restaurant: {
+        name: shadowPrimary?.venueName || researchResult.restaurant.name,
+        time: shadowPrimary?.timeLabel || researchResult.restaurant.reservationTime,
+        rating: researchResult.primary?.rating || researchResult.restaurant.rating
+      },
+      cinema: {
+        name: shadowSecondary?.venueName || researchResult.cinema.name,
+        movie: shadowSecondary?.titleLabel || researchResult.cinema.movieTitle,
+        time: shadowSecondary?.timeLabel || researchResult.cinema.showtime
+      },
+      reasoning: plannerResult.reasoning,
+      researchResult,
+      plannerResult
+    };
   }
 }
