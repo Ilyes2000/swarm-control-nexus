@@ -68,6 +68,27 @@ If you need one line for a demo pitch:
 - Simulation mode rotates through all four offer types for demo coverage
 - Merchant offers displayed in a dedicated UI panel with status tracking
 
+### Shadow Mission Twin (Feature 8)
+- Launches parallel simulated timelines before a live mission is committed
+- Compares multiple futures across cost, confidence, speed, and risk
+- Lets the user pick a preferred path and immediately launch that timeline
+- Preserves research context so the selected path starts with minimal extra latency
+- Makes tradeoffs visible instead of forcing users to trust a single opaque recommendation
+
+### Relationship-Aware Voice Negotiator (Feature 9)
+- Stores venue-specific relationship memory across calls
+- Tracks call count, success rate, detected language, preferred tone, and timing preferences
+- Surfaces venue intelligence directly in the dashboard
+- Lets the call/negotiation layer reuse business-specific tactics instead of starting from zero every mission
+- Supports multilingual and venue-adaptive behavior for future live-call strategies
+
+### Skill Genome / MetaClaw-Inspired Learning Loop (Feature 10)
+- Turns failures and recoveries into reusable skills with measurable lift
+- Organizes learned tactics into generations
+- Shows usage count, category, and observed improvement directly in the UI
+- Supports replay and mission comparison workflows so teams can demonstrate how the swarm improves over time
+- Includes OMLS-style background consolidation hooks for between-mission optimization
+
 ### Backend Orchestration Engine
 - Express HTTP API for mission control
 - WebSocket event stream for frontend hydration
@@ -90,6 +111,180 @@ If you need one line for a demo pitch:
 - Hybrid research with seeded fallback data
 - Backend-owned simulation mode instead of frontend `setTimeout()` mocks
 - Same event contract for live and simulation missions
+
+## Live Demo Checklist
+
+Before recording a live-mode demo, verify these credentials and integrations:
+
+1. `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for LLM calls
+2. `TELNYX_API_KEY` and `TELNYX_PHONE_NUMBER` for SMS
+3. `CLAWDTALK_API_KEY` for real voice calls
+4. `RESEMBLE_API_KEY` for voice cloning
+5. `USER_PHONE_NUMBER` for receiving approval and confirmation SMS
+
+Recommended pre-recording steps:
+- Turn the Demo toggle off if you want a true live-mode recording
+- Run one warm-up mission before recording so the providers and connections are already hot
+- Verify your phone can receive the approval SMS path you plan to show
+- Keep one backup mission ready in case a venue or provider path is slow during recording
+
+## Hackathon Demo Script (5 Minutes)
+
+This is a suggested live-mode script for recording the hackathon demo video.
+
+### [0:00-0:25] Intro
+
+> This is ClawSwarm Nexus — an open-source, production-ready multi-agent AI system that makes real phone calls and sends real SMS on your behalf using ClawdTalk and Telnyx. You give it a mission, and a swarm of 5 specialized agents handles everything — from research to live calls to cost optimization. Everything you're about to see is happening in real time — no simulation.
+
+### [0:25-0:50] Dashboard Tour
+
+> Here's the dashboard. On the left — our 5 agents: Planner, Research, Call, Negotiation, and Scheduler. Each one lights up as it activates. Center — the mission timeline showing every step live. Right side — real call transcripts, SMS log, and the explainability panel showing exactly why the AI made each decision.
+
+### [0:50-1:15] Autonomy Ladder
+
+Suggested actions:
+- Click `Auto-Book`
+- Set budget to `$150`
+- Set confidence threshold to `80%`
+
+Suggested narration:
+
+> Users control how much autonomy the system gets. Suggest Only — just research, no calls. Call and Confirm — agents make real calls but pause for your approval. Auto-Book — fully autonomous, but with budget and time guardrails.
+>
+> I've set a $150 budget cap and 80% minimum confidence. If either is exceeded, the system pauses and asks me.
+
+### [1:15-3:30] Run the Mission Live
+
+Suggested actions:
+- Make sure the Demo toggle is `OFF`
+- Enter: `Plan a dinner and movie night for two`
+- Click `Start Mission`
+
+Suggested narration:
+
+> This is live mode — real LLM reasoning, real phone calls through ClawdTalk, real SMS through Telnyx. Watch the agents activate.
+
+As the Planner runs:
+
+> The Planner is decomposing my mission using Claude — you can see it's analyzing my specific request, not a template.
+
+As Research runs:
+
+> Research is finding venues. The explainability panel shows the provenance trail — which APIs it queried, the booking path, and the risk level for each source.
+
+As the Call agent dials:
+
+> Now the Call agent is making a real phone call through ClawdTalk to the restaurant. That's a cloned voice powered by Resemble AI — listen to the transcript streaming in live.
+
+As the merchant SMS arrives:
+
+> The merchant just texted back through Telnyx. The Negotiation agent is evaluating their counter-offer in real time.
+
+When the approval card appears:
+
+> There's the approval checkpoint. I can Confirm, Reject, or Modify right from the dashboard — or respond by SMS from my phone.
+
+Suggested action:
+- Click `Confirm`
+
+Then say:
+
+> The Scheduler is now building the final itinerary with real timing data.
+
+Suggested phone moment:
+
+> And here's the confirmation SMS on my actual phone — dinner reservation confirmed, cinema next.
+
+### [3:30-3:55] Point 8 — Shadow Mission Twin
+
+Suggested action:
+- Click the `Scan Futures` or Shadow analysis control in the header
+
+Suggested narration:
+
+> Before committing to any mission, ClawSwarm can show you three parallel futures simultaneously.
+>
+> Three AI teams just ran in parallel — each optimizing for a different dimension.
+> Path A — Best Value: $100, 92% confidence, low no-show risk — stacked discounts, off-peak timing.
+> Path B — Fastest: $115, 88% confidence — nearest venues, instant availability.
+> Path C — Premium: $152, 96% confidence — top-rated venues, best seats, the version you tell people about.
+
+Suggested hover/click:
+- Hover over the Best Value card to expose the reasoning
+- Click `Live this timeline`
+
+Continue:
+
+> Every path shows the full AI reasoning — which venues were selected, why, and what tradeoffs were made. You're not just seeing a recommendation — you're seeing the thinking behind it.
+>
+> I'll take Best Value — and the live mission launches instantly because the research was already done in the shadow run. Zero extra latency.
+>
+> This is the first time anyone has built parallel timeline simulation for voice agents. Shadow Mission Twin — choose your future before you commit to it.
+
+### [3:55-4:25] Point 9 — Relationship-Aware Voice Negotiator
+
+Suggested action:
+- Open the `Venue Intelligence` panel
+
+Suggested narration:
+
+> Now here's something that has never existed in any voice agent system before — a relationship memory for every business the agent calls.
+
+Point to a venue intelligence card and explain:
+
+> This venue has been contacted multiple times. Look at what the system learned:
+> - call count and success rate
+> - preferred tone
+> - detected language
+> - preferred booking window
+> - discovered tactics or promo memory
+
+Expand a card and continue:
+
+> Every single call is logged — outcome, what was said, what worked, what didn't. The relationship builds over time.
+>
+> The Call Agent is now a seasoned concierge — not a chatbot that starts from zero every time. It knows these venues. It adapts. It gets better with every interaction.
+>
+> Relationship-Aware Voice Negotiation — for the first time, your AI agent has memory, tone intelligence, and multilingual scripts that evolve with every call.
+
+### [4:25-5:00] Point 10 — Skill Genome
+
+Suggested action:
+- Open the `Skill Genome` panel or Genome tab
+
+Suggested narration:
+
+> And finally — the feature that makes ClawSwarm genuinely unique.
+>
+> Most AI systems are static. They make the same mistakes forever. ClawSwarm learns. Every time the agent fails — a counter-offer it couldn't handle, a timeout it didn't recover from — that failure gets analyzed and distilled into a reusable behavioral skill.
+
+Point to the generation counter and skill cards:
+
+> We're now tracking generations of learned tactics. Each skill shows:
+> - what pattern was learned
+> - what mission or venue taught it
+> - how often it has been used
+> - the measured lift it produced
+
+If replay is available:
+
+> This mission ran before these skills existed. Now we can replay it with the current skill set and estimate how many prior failures would now be resolved.
+
+Close with:
+
+> This is a MetaClaw-inspired learning loop for voice agents. Every failure becomes a skill. Every skill has measurable lift. The swarm gets better with every mission it runs.
+
+### [5:00] Closing
+
+> ClawSwarm Nexus — five specialized agents, real phone calls through ClawdTalk, real SMS through Telnyx, real voice through Resemble AI, real reasoning through Claude.
+>
+> Shadow Mission Twin — choose between parallel futures before committing.
+> Relationship-Aware Voice Negotiation — an agent that remembers every venue it has ever called.
+> Skill Genome — an agent that learns from every failure and gets measurably better over time.
+>
+> This isn't just a chatbot demo. It's autonomous infrastructure for real-world concierge execution.
+>
+> ClawSwarm Nexus.
 
 ## Demo Flow
 
@@ -308,6 +503,9 @@ npm run build
 | 1 | Autonomy Ladder + Approval Wallet | Shipped |
 | 3 | Verified Source Graph | Shipped |
 | 7 | Merchant Copilot + Reverse Offers | Shipped |
+| 8 | Shadow Mission Twin | Shipped |
+| 9 | Relationship-Aware Voice Negotiator | Shipped |
+| 10 | Skill Genome / MetaClaw-inspired learning loop | Shipped |
 
 ### What is live in this repo now
 - Full backend orchestration inside `clawswarm-backend/`
@@ -319,6 +517,10 @@ npm run build
 - Verified source provenance on all agent reasoning cards
 - Real merchant SMS flow: send booking request, parse reply, timeout fallback
 - Merchant inbound webhook with sender validation
+- Shadow Mission Twin UI and backend simulation path
+- Venue Intelligence / relationship memory surfaces
+- Skill Genome generation and learned tactic panels
+- Workflow-aware reasoning, summaries, recommendation insights, and merchant panels
 - Backend tests (27 passing) and frontend event-mapping tests (7 passing)
 
 ### What still depends on real credentials
@@ -347,8 +549,6 @@ That visibility matters. It turns autonomous orchestration from a black box into
 | 4 | Auto-Waitlist + Rescue Swarm | Join waitlists, monitor cancellations, rebook on weather/traffic changes |
 | 5 | Budget Guardian / Deal Arbitrage | Post-booking price watch, promo stacking, automatic switch/save/keep alerts |
 | 6 | Multimodal Mission Inbox | Voice notes, screenshots, menu photos, Maps links as mission inputs |
-| 8 | Shadow Mission Twin | Run parallel simulated paths and compare savings, risk, and confidence |
-| 9 | Relationship-Aware Voice Negotiator | Business-specific call memory, tone preferences, multilingual scripts |
 
 ### Other Extensions
 - Calendar checking and booking tools during live calls
