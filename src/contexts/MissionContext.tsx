@@ -39,7 +39,7 @@ export interface ApprovalRequest {
     partySize: number;
     estimatedCost: string;
     confidence: number;
-    workflow?: "restaurant" | "cinema";
+    workflow?: string;
     actionLabel?: string;
     pauseReason?: string | null;
   };
@@ -125,7 +125,7 @@ export type MerchantOfferType = "accept" | "counter" | "offpeak" | "promo" | "no
 export interface MerchantOffer {
   id: string;
   venueName: string;
-  workflow?: "restaurant" | "cinema";
+  workflow?: string;
   requestLabel?: string;
   offerType: MerchantOfferType;
   merchantOutcome?: MerchantOfferType;
@@ -185,7 +185,7 @@ export interface ReasoningEntry {
 
 export interface RecommendationInsight {
   id: string;
-  workflow: "restaurant" | "cinema";
+  workflow: string;
   venueName: string;
   summary: string;
   confidence: number;
@@ -494,7 +494,7 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     setState((s) => ({
       ...s,
       recommendationInsights: [
-        ...s.recommendationInsights.filter((entry) => entry.workflow !== insight.workflow),
+        ...s.recommendationInsights.filter((entry) => entry.id !== insight.id),
         insight,
       ],
     }));

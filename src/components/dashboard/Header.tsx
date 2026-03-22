@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, Mic, ShieldCheck, Wand2, Zap, Radio, Volume2, VolumeX, SendHorizonal, GitBranch, Loader2, CheckCheck } from "lucide-react";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -37,6 +38,8 @@ export function Header({ onShadowAnalysis }: HeaderProps) {
   const [interruptInput, setInterruptInput] = useState("");
   const [showInterruptFlash, setShowInterruptFlash] = useState(false);
   const [showConstraints, setShowConstraints] = useState(true);
+  const [micState, setMicState] = useState<"idle" | "listening" | "processing">("idle");
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   const handleDemoToggle = (checked: boolean) => {
     if (missionStatus === "live") {
@@ -63,10 +66,16 @@ export function Header({ onShadowAnalysis }: HeaderProps) {
       return;
     }
 
-    void interruptMission(cmd);
-    setInterruptInput("");
-    setShowInterruptFlash(true);
-    window.setTimeout(() => setShowInterruptFlash(false), 1500);
+    void (async () => {
+      const result = await interruptMission(cmd);
+      if (!result.ok) {
+        return;
+      }
+
+      setInterruptInput("");
+      setShowInterruptFlash(true);
+      window.setTimeout(() => setShowInterruptFlash(false), 1500);
+    })();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -84,6 +93,78 @@ export function Header({ onShadowAnalysis }: HeaderProps) {
   };
 
   const [shadowLoading, setShadowLoading] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+      recognitionRef.current = null;
+    };
+  }, []);
+
+  const handleMicClick = () => {
+    if (micState === "listening") {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const RecognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!RecognitionCtor) {
+      toast.error("Speech recognition is not supported in this browser.");
+      return;
+    }
+
+    const recognition = new RecognitionCtor();
+    recognitionRef.current = recognition;
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.continuous = false;
+
+    recognition.onstart = () => {
+      setMicState("listening");
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((result) => result[0]?.transcript ?? "")
+        .join(" ")
+        .trim();
+
+      if (!transcript) {
+        return;
+      }
+
+      if (isLive) {
+        setInterruptInput(transcript);
+      } else {
+        setUserInput(transcript);
+      }
+      setMicState("processing");
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        toast.error("Microphone permission was denied.");
+      } else if (event.error !== "aborted") {
+        toast.error("Speech recognition failed. Try typing instead.");
+      }
+      setMicState("idle");
+      recognitionRef.current = null;
+    };
+
+    recognition.onend = () => {
+      setMicState("idle");
+      recognitionRef.current = null;
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      toast.error("Unable to start microphone input.");
+      setMicState("idle");
+      recognitionRef.current = null;
+    }
+  };
 
   const handleShadowAnalysis = async () => {
     if (!userInput.trim() || missionStatus === "live" || shadowLoading) return;
@@ -104,15 +185,13 @@ export function Header({ onShadowAnalysis }: HeaderProps) {
     { id: "autobook", label: "Auto-Book", icon: <Wand2 className="w-3.5 h-3.5" /> },
   ] as const;
   const latestMerchantOffer = merchantOffers[merchantOffers.length - 1];
-  const hasDirectRestaurantPath = recommendationInsights.some(
-    (insight) => insight.workflow === "restaurant" && insight.primaryBookingPath === "direct",
-  );
+  const hasDirectBookingPath = recommendationInsights.some((insight) => insight.primaryBookingPath === "direct");
   const hasResellerPath = recommendationInsights.some((insight) => insight.primaryBookingPath === "reseller");
   const hasHighRiskSource = recommendationInsights.some((insight) => insight.primaryRisk === "high");
   const hasMediumRiskSource = recommendationInsights.some((insight) => insight.primaryRisk === "medium");
   const hasFallbackSource = recommendationInsights.some((insight) => insight.fallbackMode);
   const missionSignals = [
-    hasDirectRestaurantPath ? { label: "DIRECT BOOKING PATH", tone: "success" } : null,
+    hasDirectBookingPath ? { label: "DIRECT BOOKING PATH", tone: "success" } : null,
     hasResellerPath ? { label: "RESELLER RISK", tone: "warning" } : null,
     hasHighRiskSource
       ? { label: "HIGH RISK SOURCE", tone: "destructive" }
@@ -141,6 +220,10 @@ export function Header({ onShadowAnalysis }: HeaderProps) {
     destructive: "border-destructive/30 bg-destructive/10 text-destructive",
     primary: "border-primary/30 bg-primary/10 text-primary",
   };
+  const micButtonCls =
+    micState === "listening"
+      ? "text-destructive hover:text-destructive hover:bg-destructive/10 animate-pulse"
+      : "text-muted-foreground hover:text-primary";
 
   return (
     <header className="glass-panel px-6 py-3 flex flex-wrap items-center gap-4 relative overflow-hidden">
@@ -197,7 +280,7 @@ export function Header({ onShadowAnalysis }: HeaderProps) {
             : "stream offline"}
       </div>
 
-      <div className="flex-1 flex items-center gap-2 max-w-xl relative">
+      <div className="flex-1 flex items-center gap-2 max-w-3xl relative">
         {isLive ? (
           <>
             <div className="relative flex-1">
@@ -225,6 +308,15 @@ export function Header({ onShadowAnalysis }: HeaderProps) {
               size="icon"
               variant="ghost"
               className="shrink-0 text-warning hover:text-warning hover:bg-warning/10"
+              onClick={handleMicClick}
+              title={micState === "listening" ? "Stop listening" : "Use microphone"}
+            >
+              <Mic className={`w-4 h-4 ${micState === "listening" ? "text-destructive" : ""}`} />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="shrink-0 text-warning hover:text-warning hover:bg-warning/10"
               onClick={handleInterrupt}
               disabled={!interruptInput.trim()}
             >
@@ -239,7 +331,13 @@ export function Header({ onShadowAnalysis }: HeaderProps) {
               placeholder="Enter your mission..."
               className="bg-muted/50 border-border/50 text-sm font-mono"
             />
-            <Button size="icon" variant="ghost" className="shrink-0 text-muted-foreground hover:text-primary">
+            <Button
+              size="icon"
+              variant="ghost"
+              className={`shrink-0 ${micButtonCls}`}
+              onClick={handleMicClick}
+              title={micState === "listening" ? "Stop listening" : "Use microphone"}
+            >
               <Mic className="w-4 h-4" />
             </Button>
           </>

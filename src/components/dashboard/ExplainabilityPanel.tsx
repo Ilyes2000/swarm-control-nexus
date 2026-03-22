@@ -17,6 +17,12 @@ import {
 } from "lucide-react";
 import { useMission, ReasoningEntry, RecommendationInsight, SourceReference } from "@/contexts/MissionContext";
 
+function formatWorkflowLabel(workflow: string) {
+  return workflow
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
 function ConfidenceBar({ value }: { value: number }) {
   const color =
     value >= 90 ? "bg-success" : value >= 70 ? "bg-primary" : value >= 50 ? "bg-warning" : "bg-destructive";
@@ -114,7 +120,7 @@ function ProvenanceCard({ insight }: { insight: RecommendationInsight }) {
       <div className="flex items-center gap-2 mb-2">
         <MapPinned className="w-3.5 h-3.5 text-primary" />
         <span className="text-[10px] font-semibold uppercase tracking-widest text-primary">
-          {insight.workflow === "restaurant" ? "Restaurant" : "Cinema"} Recommendation
+          {formatWorkflowLabel(insight.workflow)} Recommendation
         </span>
       </div>
       <p className="text-[11px] text-foreground font-semibold">{insight.venueName}</p>

@@ -55,7 +55,7 @@ app.post("/api/mission/start", async (req, res) => {
   try {
     const result = await orchestrator.startMission({
       missionText: req.body?.missionText,
-      mode: req.body?.mode === "simulation" ? "simulation" : "live",
+      mode: config.simulationMode ? "simulation" : (req.body?.mode === "simulation" ? "simulation" : "live"),
       autonomyMode: req.body?.autonomyMode,
       autonomyConstraints: req.body?.autonomyConstraints
     });
@@ -86,7 +86,7 @@ app.post("/api/mission/shadow", async (req, res) => {
   try {
     const result = await orchestrator.startShadowMission({
       missionText: req.body?.missionText,
-      mode: req.body?.mode === "simulation" ? "simulation" : "live"
+      mode: config.simulationMode ? "simulation" : (req.body?.mode === "simulation" ? "simulation" : "live")
     });
     res.status(200).json(result);
   } catch (error) {
@@ -105,11 +105,17 @@ app.post("/api/mission/shadow/launch", async (req, res) => {
       return res.status(404).json({ error: "Shadow path not found" });
     }
 
-    const result = await orchestrator.startMission({
-      missionText: missionText || shadowPath.researchResult?.restaurant?.name
+    const fallbackMissionText =
+      shadowPath.researchResult?.missionType === "dinner_and_movie"
         ? `Plan a dinner at ${shadowPath.restaurant.name} and movie ${shadowPath.cinema.movie}`
-        : missionText,
-      mode: mode === "simulation" ? "simulation" : "live",
+        : missionText ||
+          `Plan around ${shadowPath.restaurant.name}${
+            shadowPath.cinema?.name ? ` and ${shadowPath.cinema.name}` : ""
+          }`;
+
+    const result = await orchestrator.startMission({
+      missionText: missionText?.trim() || fallbackMissionText,
+      mode: config.simulationMode ? "simulation" : (mode === "simulation" ? "simulation" : "live"),
       autonomyMode: autonomyMode || "autobook",
       autonomyConstraints
     });

@@ -291,7 +291,7 @@ export function useMissionRuntime() {
     async (input: string | { command: string; details?: Record<string, unknown> }) => {
       const trimmedCommand = typeof input === "string" ? input.trim() : input.command.trim();
       if (!trimmedCommand) {
-        return;
+        return { ok: false as const, error: "Empty interrupt command." };
       }
 
       try {
@@ -299,10 +299,12 @@ export function useMissionRuntime() {
           command: trimmedCommand,
           ...(typeof input === "string" ? {} : { details: input.details }),
         });
+        return { ok: true as const };
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unable to interrupt mission.";
         setLastError(message);
         toast.error(message);
+        return { ok: false as const, error: message };
       }
     },
     [postJson],
