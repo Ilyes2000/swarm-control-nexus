@@ -279,7 +279,7 @@ TELNYX_PHONE_NUMBER=your_number
 USER_PHONE_NUMBER=your_number
 ```
 
-Optional variables supported by the backend:
+variables supported by the backend:
 
 | Variable | Default | Purpose |
 |---|---|---|
