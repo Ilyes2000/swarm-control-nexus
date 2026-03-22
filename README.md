@@ -47,6 +47,27 @@ If you need one line for a demo pitch:
 - SMS log and live call transcript view
 - Final summary with optimization and savings breakdown
 
+### Autonomy Ladder + Approval Wallet (Feature 1)
+- Three user-selectable modes: **Suggest Only**, **Confirm Before Booking**, and **Auto-Book**
+- Auto-Book mode respects configurable constraints: max budget, latest time, minimum confidence
+- Constraint violations automatically fall back to manual confirmation
+- SMS-based approval flow: users can reply CONFIRM or MODIFY from their phone
+
+### Verified Source Graph (Feature 3)
+- Every agent reasoning card shows source provenance with labels, type, freshness, and verification status
+- Sources tagged as `web`, `api`, `cache`, or `sms` with `live` or `cached` freshness indicators
+- Verified vs unverified badges so users can gauge trustworthiness at a glance
+- Explainability panel displays alternatives considered and confidence scores
+
+### Merchant Copilot + Reverse Offers (Feature 7)
+- Venues receive real SMS booking requests via Telnyx in live mode
+- Merchants can reply: ACCEPT, counter-offer with a new time, offer a discount, or push a promo code
+- Intelligent SMS parser classifies responses into `accept`, `counter`, `offpeak`, or `promo` offer types
+- Configurable timeout (default 30s) marks the request for manual follow-up if the merchant doesn't respond
+- Graceful fallbacks for missing phone numbers and SMS delivery failures
+- Simulation mode rotates through all four offer types for demo coverage
+- Merchant offers displayed in a dedicated UI panel with status tracking
+
 ### Backend Orchestration Engine
 - Express HTTP API for mission control
 - WebSocket event stream for frontend hydration
@@ -56,6 +77,7 @@ If you need one line for a demo pitch:
 ### Telephony + Messaging
 - Telnyx SMS send/receive integration
 - Telnyx webhook parsing for `CONFIRM` and `MODIFY`
+- Merchant inbound SMS webhook with sender validation
 - ClawdTalk adapter for outbound call workflows
 - Realistic call transcript streaming to the dashboard
 
@@ -71,15 +93,17 @@ If you need one line for a demo pitch:
 
 ## Demo Flow
 
-1. The user enters a mission like `Plan a dinner and movie night`.
+1. The user enters a mission like `Plan a dinner and movie night` and picks an autonomy level.
 2. The backend starts a mission run and streams state over WebSocket.
-3. The Planner decomposes the mission.
+3. The Planner decomposes the mission (with verified source provenance on every decision).
 4. The Research agent selects a restaurant and cinema.
 5. The Call agent simulates or executes real reservation calls.
-6. The Negotiation agent applies cost optimizations.
-7. The Scheduler finalizes the itinerary.
-8. The user receives SMS progress updates.
-9. The dashboard ends with a mission summary, reasoning trace, memory trail, and savings breakdown.
+6. Merchants receive SMS booking requests and can accept or counter-offer in real time.
+7. The Negotiation agent evaluates merchant responses and applies cost optimizations.
+8. The autonomy ladder enforces budget/time/confidence constraints — escalating to the user when needed.
+9. The Scheduler finalizes the itinerary.
+10. The user receives SMS progress updates.
+11. The dashboard ends with a mission summary, reasoning trace, memory trail, and savings breakdown.
 
 The user can also interrupt the mission live, for example:
 - `Make it cheaper`
@@ -119,6 +143,8 @@ Backend (Node.js + Express + ws)
 │  ├─ tests/                    # Backend tests
 │  ├─ skill/                    # OpenClaw skill definition
 │  ├─ orchestrator.js           # Mission lifecycle manager
+│  ├─ state.js                  # Initial mission state factory
+│  ├─ protocol.js               # Shared event format
 │  ├─ websocket.js              # WebSocket hub
 │  └─ server.js                 # API + WebSocket server
 └─ README.md
@@ -142,6 +168,14 @@ Supported event families:
 - `memory`
 - `skill`
 - `adaptation`
+- `merchant_offer`
+- `merchant_offer_update`
+- `recommendation_insight`
+- `approval_request`
+- `approval_cleared`
+- `itinerary_confirmation_request`
+- `itinerary_confirmation_cleared`
+- `skill_update`
 - `training_mode`
 - `error`
 
@@ -189,23 +223,33 @@ cd ..
 Copy [`.env.example`](./clawswarm-backend/.env.example) to `clawswarm-backend/.env`, then fill in your real values:
 
 ```env
+# Required for live mode
+ANTHROPIC_API_KEY=your_key
 TELNYX_API_KEY=your_key
 TELNYX_PHONE_NUMBER=your_number
-RESEMBLE_API_KEY=your_key
-ANTHROPIC_API_KEY=your_key
+USER_PHONE_NUMBER=your_number
 ```
 
 Optional variables supported by the backend:
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL`
-- `ANTHROPIC_MODEL`
-- `PORT`
-- `USER_PHONE_NUMBER`
-- `RESEMBLE_PROJECT_ID`
-- `CLAWDTALK_WS_URL`
-- `CLAWDTALK_PHONE_NUMBER`
-- `RESEMBLE_VOICE_NAME`
-- `SIMULATION_DELAY_MS`
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OPENAI_API_KEY` | — | Alternative LLM provider |
+| `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model name |
+| `ANTHROPIC_MODEL` | `claude-3-5-sonnet-latest` | Anthropic model name |
+| `RESEMBLE_API_KEY` | — | Voice clone via Resemble AI |
+| `RESEMBLE_PROJECT_ID` | — | Resemble project |
+| `RESEMBLE_VOICE_NAME` | `ClawSwarm Concierge` | Voice name |
+| `CLAWDTALK_WS_URL` | — | ClawdTalk WebSocket endpoint |
+| `CLAWDTALK_PHONE_NUMBER` | — | ClawdTalk caller ID |
+| `CLAWDTALK_API_KEY` | — | ClawdTalk auth |
+| `CLAWDTALK_API_URL` | — | ClawdTalk REST endpoint |
+| `CLAWDTALK_SKILL_DIR` | — | ClawdTalk skill directory |
+| `PORT` | `8787` | Backend server port |
+| `CORS_ORIGIN` | `*` | Allowed CORS origin |
+| `SIMULATION_DELAY_MS` | `350` | Delay between simulation steps |
+| `AUTO_APPROVAL_DELAY_MS` | `3000` | Auto-approve timeout in simulation confirm mode |
+| `MERCHANT_RESPONSE_TIMEOUT_MS` | `30000` | How long to wait for a merchant SMS reply before marking the request for manual follow-up |
 
 ### 4. Start the backend
 
@@ -257,18 +301,30 @@ npm run build
 
 ## Current Status
 
-What is live in this repo now:
-- real backend scaffolding inside `clawswarm-backend/`
-- live mission runtime hook in the frontend
-- backend-driven simulation mode
-- mission start / interrupt / reset API
-- WebSocket event streaming into the existing dashboard
-- backend tests and frontend event-mapping tests
+### Shipped from the Top 10 Roadmap
 
-What still depends on real credentials and provider setup:
-- live Telnyx SMS delivery
-- live Resemble voice cloning and speech generation
-- true ClawdTalk outbound production call flow
+| # | Feature | Status |
+|---|---|---|
+| 1 | Autonomy Ladder + Approval Wallet | Shipped |
+| 3 | Verified Source Graph | Shipped |
+| 7 | Merchant Copilot + Reverse Offers | Shipped |
+
+### What is live in this repo now
+- Full backend orchestration inside `clawswarm-backend/`
+- Live mission runtime hook in the frontend
+- Backend-driven simulation mode with deterministic merchant offer rotation
+- Mission start / interrupt / reset API
+- WebSocket event streaming into the existing dashboard
+- Three-tier autonomy ladder (Suggest, Confirm, Auto-Book) with constraint gates
+- Verified source provenance on all agent reasoning cards
+- Real merchant SMS flow: send booking request, parse reply, timeout fallback
+- Merchant inbound webhook with sender validation
+- Backend tests (27 passing) and frontend event-mapping tests (7 passing)
+
+### What still depends on real credentials
+- Live Telnyx SMS delivery (merchant + user flows)
+- Live Resemble voice cloning and speech generation
+- True ClawdTalk outbound production call flow
 
 The codebase is intentionally structured so that the demo still works even when those providers are unavailable.
 
@@ -283,11 +339,19 @@ This project is easy to evaluate quickly because the product loop is visible:
 
 That visibility matters. It turns autonomous orchestration from a black box into a measurable product experience.
 
-## Future Extensions
+## Roadmap (Remaining Top 10)
 
+| # | Feature | Description |
+|---|---|---|
+| 2 | Persistent Memory Passport | Long-lived preference graph: budgets, allergies, date-night patterns, loyalty memberships |
+| 4 | Auto-Waitlist + Rescue Swarm | Join waitlists, monitor cancellations, rebook on weather/traffic changes |
+| 5 | Budget Guardian / Deal Arbitrage | Post-booking price watch, promo stacking, automatic switch/save/keep alerts |
+| 6 | Multimodal Mission Inbox | Voice notes, screenshots, menu photos, Maps links as mission inputs |
+| 8 | Shadow Mission Twin | Run parallel simulated paths and compare savings, risk, and confidence |
+| 9 | Relationship-Aware Voice Negotiator | Business-specific call memory, tone preferences, multilingual scripts |
+
+### Other Extensions
 - Calendar checking and booking tools during live calls
-- Price-comparison APIs for restaurant and ticket optimization
-- Persistent mission history and user preferences
 - Multi-mission support with true session IDs
 - Production-grade ClawdTalk client wiring
 - Deployment targets and hosted demo infrastructure

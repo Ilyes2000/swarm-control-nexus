@@ -37,12 +37,12 @@ function isApprovalCommand(command) {
   return command === "approve" || command === "reject" || command === "modify";
 }
 
-function parseClockValue(value) {
+export function parseClockValue(value) {
   if (!value) {
     return null;
   }
 
-  if (/^\d{2}:\d{2}$/.test(value)) {
+  if (/^\d{1,2}:\d{2}$/.test(value)) {
     const [hours, minutes] = value.split(":").map(Number);
     return hours * 60 + minutes;
   }
@@ -459,6 +459,10 @@ export class MissionOrchestrator {
   }
 
   async interruptMission({ command, details }) {
+    if (!command?.trim()) {
+      throw new Error("command is required");
+    }
+
     if (this.state.pendingApproval && isApprovalCommand(command)) {
       const approvalRequestId = details?.approvalRequestId;
       if (approvalRequestId && approvalRequestId !== this.state.pendingApproval.id) {
@@ -883,7 +887,6 @@ export class MissionOrchestrator {
         description: "User requested itinerary modifications by SMS.",
         status: "pending"
       });
-      this.setPendingItineraryConfirmation(null);
       try {
         await this.interruptMission({
           command: "itinerary_modify",
@@ -895,6 +898,7 @@ export class MissionOrchestrator {
       } catch (err) {
         console.warn("Interrupt from inbound SMS failed, ignoring.", err);
       }
+      this.setPendingItineraryConfirmation(null);
       return;
     }
 

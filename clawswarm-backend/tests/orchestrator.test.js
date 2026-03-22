@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MissionOrchestrator } from "../orchestrator.js";
+import { MissionOrchestrator, parseClockValue } from "../orchestrator.js";
+import { runSchedulerAgent } from "../agents/scheduler.js";
 
 function createTestConfig() {
   return {
@@ -293,4 +294,79 @@ test("approval state cleared on abort", async () => {
   await orchestrator.waitForCurrentRun();
 
   assert.equal(orchestrator.getState().pendingApproval, null, "pendingApproval should be cleared after abort");
+});
+
+test("SMS MODIFY during itinerary confirmation reaches interruptMission", async () => {
+  const events = [];
+  const orchestrator = new MissionOrchestrator({
+    config: createTestConfig(),
+    emitEvent: (event) => events.push(event)
+  });
+
+  await orchestrator.startMission({
+    missionText: "Plan a dinner and movie night",
+    mode: "simulation"
+  });
+  await orchestrator.waitForCurrentRun();
+
+  // Itinerary confirmation should be pending after completion
+  assert.ok(orchestrator.getState().pendingItineraryConfirmation);
+
+  await orchestrator.handleInboundSms({
+    from: "+15550001111",
+    text: "MODIFY",
+    command: "MODIFY"
+  });
+  await orchestrator.waitForCurrentRun();
+
+  // The itinerary confirmation should be cleared after the modify flow
+  assert.equal(orchestrator.getState().pendingItineraryConfirmation, null);
+  // An adaptation event from runInterrupt proves the interrupt path was reached
+  assert.ok(
+    events.some((event) => event.type === "adaptation" && event.payload.message.includes("itinerary")),
+    "interruptMission should have triggered an adaptation event for the itinerary modify"
+  );
+});
+
+test("scheduler handles missing negotiation pricing gracefully", async () => {
+  const fakeLlm = {
+    generateText: async ({ fallback }) => fallback
+  };
+
+  const researchResult = {
+    restaurant: { name: "Test Bistro", reservationTime: "7:00 PM", rating: "4.5", phone: "" },
+    cinema: { name: "Test Cinema", showtime: "9:30 PM", movieTitle: "Test Movie", seatType: "premium" }
+  };
+
+  // negotiationResult with no originalCost, optimizedCost, or savings
+  const negotiationResult = {};
+
+  const result = await runSchedulerAgent({ researchResult, negotiationResult, llm: fakeLlm });
+  assert.ok(result.summary.optimization);
+  assert.equal(result.summary.optimization.originalCost, "$0.00");
+  assert.equal(result.summary.optimization.optimizedCost, "$0.00");
+  assert.equal(result.summary.optimization.savedAmount, "$0.00");
+});
+
+test("parseClockValue parses single-digit hours", () => {
+  assert.equal(parseClockValue("9:30"), 9 * 60 + 30);
+  assert.equal(parseClockValue("22:00"), 22 * 60);
+  assert.equal(parseClockValue("0:05"), 5);
+});
+
+test("empty interrupt command is rejected", async () => {
+  const orchestrator = new MissionOrchestrator({
+    config: createTestConfig(),
+    emitEvent: () => {}
+  });
+
+  await assert.rejects(
+    () => orchestrator.interruptMission({ command: "" }),
+    /command is required/
+  );
+
+  await assert.rejects(
+    () => orchestrator.interruptMission({ command: undefined }),
+    /command is required/
+  );
 });

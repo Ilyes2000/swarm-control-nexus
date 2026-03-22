@@ -7,6 +7,10 @@ export async function runSchedulerAgent({ researchResult, negotiationResult, llm
     fallback: fallbackLiveText
   });
 
+  const originalCost = negotiationResult.originalCost ?? 0;
+  const optimizedCost = negotiationResult.optimizedCost ?? 0;
+  const totalSavings = negotiationResult.savings?.totalSavings ?? 0;
+
   return {
     itinerary,
     liveText,
@@ -23,9 +27,9 @@ export async function runSchedulerAgent({ researchResult, negotiationResult, llm
       ],
       timeTaken: "under 30 seconds",
       optimization: {
-        originalCost: `$${negotiationResult.originalCost.toFixed(2)}`,
-        optimizedCost: `$${negotiationResult.optimizedCost.toFixed(2)}`,
-        savedAmount: `$${negotiationResult.savings.totalSavings.toFixed(2)}`,
+        originalCost: `$${originalCost.toFixed(2)}`,
+        optimizedCost: `$${optimizedCost.toFixed(2)}`,
+        savedAmount: `$${totalSavings.toFixed(2)}`,
         savedPercent: "14.1% savings",
         tradeoffs: [
           { label: "Restaurant", original: "first available", optimized: `${researchResult.restaurant.name} (${researchResult.restaurant.rating})` },
