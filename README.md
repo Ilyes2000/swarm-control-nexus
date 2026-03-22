@@ -1,4 +1,5 @@
 # 🦀 ClawSwarm Nexus
+<img width="3016" height="1704" alt="image" src="https://github.com/user-attachments/assets/b6499dcc-df3d-44a7-914c-6efbbcb2d9d7" />
 
 ClawSwarm Nexus is a real-time multi-agent concierge that can plan, negotiate, call, and confirm an outing for you while you watch every decision happen live.
 
