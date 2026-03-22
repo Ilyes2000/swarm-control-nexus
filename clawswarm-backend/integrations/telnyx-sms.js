@@ -1,13 +1,14 @@
 export function parseInboundSmsWebhook(body = {}) {
   const payload = body.data?.payload ?? body.payload ?? body.data ?? body;
-  const messageText = payload.text ?? payload.body ?? payload.message?.text ?? "";
+  const messageText = (payload.text ?? payload.body ?? payload.message?.text ?? "").trim();
   const from = payload.from?.phone_number ?? payload.from ?? "";
+  const commandMatch = messageText.match(/\b(CONFIRM|MODIFY|APPROVE|REJECT|ACCEPT)\b/i);
 
   return {
     eventType: body.data?.event_type ?? body.event_type ?? "unknown",
     from,
     text: messageText,
-    command: messageText.trim().toUpperCase(),
+    command: commandMatch ? commandMatch[1].toUpperCase() : messageText.toUpperCase(),
     raw: body
   };
 }

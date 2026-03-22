@@ -29,15 +29,18 @@ export function useMissionRuntime() {
     addSMS,
     addMerchantOffer,
     updateMerchantOffer,
+    addRecommendationInsight,
     setSummary,
     addReasoning,
     addMemory,
     addSkill,
+    updateSkill,
     addAdaptation,
     setTrainingMode,
     setDemoMode,
     setUserInput,
     setPendingApproval,
+    setPendingItineraryConfirmation,
     hydrateMission,
     resetMission: resetLocalMission,
   } = useMission();
@@ -60,15 +63,18 @@ export function useMissionRuntime() {
       addSMS,
       addMerchantOffer,
       updateMerchantOffer,
+      addRecommendationInsight,
       setSummary,
       addReasoning,
       addMemory,
       addSkill,
+      updateSkill,
       addAdaptation,
       setTrainingMode,
       setDemoMode,
       setUserInput,
       setPendingApproval,
+      setPendingItineraryConfirmation,
     }),
     [
       addAdaptation,
@@ -79,14 +85,17 @@ export function useMissionRuntime() {
       addSMS,
       addSkill,
       addTimelineEntry,
+      addRecommendationInsight,
       hydrateMission,
       setCall,
       setDemoMode,
       setMissionStatus,
       setPendingApproval,
+      setPendingItineraryConfirmation,
       setSummary,
       setTrainingMode,
       setUserInput,
+      updateSkill,
       updateAgent,
       updateMerchantOffer,
       updateTimelineEntry,
@@ -139,26 +148,6 @@ export function useMissionRuntime() {
     [actions],
   );
 
-  const fetchCurrentMissionState = useCallback(async () => {
-    try {
-      const response = await fetch(getMissionApiUrl("/api/mission/state"));
-      if (!response.ok) {
-        return;
-      }
-
-      const payload = (await response.json()) as { state?: unknown };
-      if (payload.state) {
-        handleMissionEvent({
-          type: "snapshot",
-          payload: payload.state as Parameters<typeof hydrateMission>[0],
-          ts: new Date().toISOString(),
-        });
-      }
-    } catch {
-      // Ignore bootstrap failures until the backend is available.
-    }
-  }, [handleMissionEvent, hydrateMission]);
-
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current !== null) {
       window.clearTimeout(reconnectTimerRef.current);
@@ -181,7 +170,6 @@ export function useMissionRuntime() {
     socket.onopen = () => {
       setConnectionState("connected");
       setLastError(null);
-      void fetchCurrentMissionState();
     };
 
     socket.onmessage = (message) => {
@@ -213,7 +201,7 @@ export function useMissionRuntime() {
         connectMissionStream();
       }, 1000);
     };
-  }, [clearReconnectTimer, fetchCurrentMissionState, handleMissionEvent]);
+  }, [clearReconnectTimer, handleMissionEvent]);
 
   useEffect(() => {
     shouldReconnectRef.current = true;

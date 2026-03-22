@@ -31,6 +31,11 @@ test("parseMerchantResponseText — accept keywords", () => {
   }
 });
 
+test("parseMerchantResponseText — accepts trailing confirmation text", () => {
+  const result = parseMerchantResponseText("ACCEPT, thanks");
+  assert.equal(result.offerType, "accept");
+});
+
 test("parseMerchantResponseText — counter with time", () => {
   const result = parseMerchantResponseText("How about 8:00 PM?");
   assert.equal(result.offerType, "counter");
@@ -57,7 +62,7 @@ test("parseMerchantResponseText — offpeak keywords", () => {
 
 // --- Orchestrator integration tests ---
 
-test("timeout auto-accepts when merchant does not respond", async () => {
+test("simulation still records merchant offers when the merchant does not respond immediately", async () => {
   const events = [];
   const orchestrator = new MissionOrchestrator({
     config: createTestConfig({ merchantResponseTimeoutMs: 50 }),
@@ -87,16 +92,33 @@ test("handleInboundMerchantSms resolves pending merchant", async () => {
       resolvedValue = response;
       resolve();
     };
-    orchestrator.pendingMerchantVenue = "Test Restaurant";
+    orchestrator.pendingMerchantTarget = {
+      venueName: "Test Restaurant",
+      venuePhone: "5550009999"
+    };
   });
 
-  await orchestrator.handleInboundMerchantSms({ from: "Test Restaurant", text: "ACCEPT" });
+  await orchestrator.handleInboundMerchantSms({ from: "+1 (555) 000-9999", text: "ACCEPT" });
   await promise;
 
   assert.equal(resolvedValue.offerType, "accept");
   assert.equal(orchestrator.pendingMerchantResolver, null);
+  assert.equal(orchestrator.pendingMerchantTarget, null);
   assert.ok(events.some((e) => e.type === "sms" && e.payload.direction === "received"));
   assert.ok(events.some((e) => e.type === "timeline_entry" && e.payload.description.includes("replied")));
+});
+
+test("stale merchant SMS is ignored when no merchant response is pending", async () => {
+  const events = [];
+  const orchestrator = new MissionOrchestrator({
+    config: createTestConfig(),
+    emitEvent: (event) => events.push(event)
+  });
+
+  await orchestrator.handleInboundMerchantSms({ from: "+1 (555) 000-9998", text: "ACCEPT" });
+
+  assert.equal(orchestrator.getState().merchantOffers.length, 0);
+  assert.ok(events.some((e) => e.type === "sms" && e.payload.direction === "received"));
 });
 
 test("resetMission clears merchant state", () => {
@@ -106,12 +128,15 @@ test("resetMission clears merchant state", () => {
   });
 
   orchestrator.pendingMerchantResolver = () => {};
-  orchestrator.pendingMerchantVenue = "Some Place";
+  orchestrator.pendingMerchantTarget = {
+    venueName: "Some Place",
+    venuePhone: "5551234567"
+  };
   orchestrator.pendingMerchantTimer = setTimeout(() => {}, 100000);
 
   orchestrator.resetMission();
 
   assert.equal(orchestrator.pendingMerchantResolver, null);
-  assert.equal(orchestrator.pendingMerchantVenue, null);
+  assert.equal(orchestrator.pendingMerchantTarget, null);
   assert.equal(orchestrator.pendingMerchantTimer, null);
 });

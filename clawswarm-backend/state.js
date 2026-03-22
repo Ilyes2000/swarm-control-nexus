@@ -17,7 +17,7 @@ const defaultAgents = [
 export function createInitialMissionState() {
   return {
     missionStatus: "idle",
-    agents: defaultAgents.map((agent) => ({ ...agent })),
+    agents: structuredClone(defaultAgents),
     timeline: [],
     call: {
       active: false,
@@ -25,15 +25,20 @@ export function createInitialMissionState() {
       receiver: "",
       duration: 0,
       transcript: [],
-      status: "ended"
+      status: "ended",
+      providerMode: "live",
+      transcriptMode: "none",
+      handoffLabel: null
     },
     smsLog: [],
     merchantOffers: [],
+    recommendationInsights: [],
     summary: {
       visible: false,
       result: "",
       costBreakdown: [],
-      timeTaken: ""
+      timeTaken: "",
+      autonomyRecap: null
     },
     reasoning: [],
     memory: [],
@@ -48,7 +53,8 @@ export function createInitialMissionState() {
       latestTime: null,
       minConfidence: null
     },
-    pendingApproval: null
+    pendingApproval: null,
+    pendingItineraryConfirmation: null
   };
 }
 

@@ -16,11 +16,16 @@ function createActions(): MissionEventActions {
     addReasoning: vi.fn(),
     addMemory: vi.fn(),
     addSkill: vi.fn(),
+    updateSkill: vi.fn(),
     addAdaptation: vi.fn(),
     setTrainingMode: vi.fn(),
     setDemoMode: vi.fn(),
     setUserInput: vi.fn(),
     setPendingApproval: vi.fn(),
+    setPendingItineraryConfirmation: vi.fn(),
+    addMerchantOffer: vi.fn(),
+    updateMerchantOffer: vi.fn(),
+    addRecommendationInsight: vi.fn(),
   };
 }
 
@@ -139,5 +144,85 @@ describe("applyMissionEvent", () => {
       },
     });
     expect(actions.setPendingApproval).toHaveBeenNthCalledWith(2, null);
+  });
+
+  it("maps merchant offer events into mission state actions", () => {
+    const actions = createActions();
+
+    applyMissionEvent(
+      {
+        type: "merchant_offer",
+        payload: {
+          id: "offer-1",
+          venueName: "Bella Notte",
+          offerType: "promo",
+          originalRequest: "Dinner for two",
+          merchantResponse: "Use code CLAWVIP tonight",
+          details: {
+            promoCode: "CLAWVIP",
+            discount: "25%",
+          },
+          status: "pending",
+          timestamp: new Date().toISOString(),
+        },
+        ts: new Date().toISOString(),
+      },
+      actions,
+    );
+
+    applyMissionEvent(
+      {
+        type: "merchant_offer_update",
+        payload: {
+          id: "offer-1",
+          updates: {
+            status: "accepted",
+          },
+        },
+        ts: new Date().toISOString(),
+      },
+      actions,
+    );
+
+    expect(actions.addMerchantOffer).toHaveBeenCalled();
+    expect(actions.updateMerchantOffer).toHaveBeenCalledWith("offer-1", { status: "accepted" });
+  });
+
+  it("maps recommendation insight and skill update events", () => {
+    const actions = createActions();
+
+    applyMissionEvent(
+      {
+        type: "recommendation_insight",
+        payload: {
+          id: "rec-1",
+          workflow: "restaurant",
+          venueName: "Bella Notte",
+          summary: "Bella Notte at 7:30 PM",
+          confidence: 92,
+          sources: [],
+          primaryBookingPath: "direct",
+          primaryRisk: "low",
+          fallbackMode: false,
+        },
+        ts: new Date().toISOString(),
+      },
+      actions,
+    );
+
+    applyMissionEvent(
+      {
+        type: "skill_update",
+        payload: {
+          skillKey: "Counter-offer escalation::venue:5550009999",
+          updates: { usageCount: 2 },
+        },
+        ts: new Date().toISOString(),
+      },
+      actions,
+    );
+
+    expect(actions.addRecommendationInsight).toHaveBeenCalled();
+    expect(actions.updateSkill).toHaveBeenCalledWith("Counter-offer escalation::venue:5550009999", { usageCount: 2 });
   });
 });

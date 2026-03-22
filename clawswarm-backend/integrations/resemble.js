@@ -1,8 +1,13 @@
 export function createResembleClient(config) {
+  let cachedFallbackVoice = null;
+
   return {
     async cloneVoice({ name, sampleUrl, description }) {
-      if (!config.resembleApiKey) {
-        return { provider: "simulation", voiceId: "demo-voice", name };
+      if (!config.resembleApiKey || !sampleUrl) {
+        if (!cachedFallbackVoice || cachedFallbackVoice.name !== name) {
+          cachedFallbackVoice = { provider: "simulation", voiceId: "demo-voice", name };
+        }
+        return cachedFallbackVoice;
       }
 
       try {

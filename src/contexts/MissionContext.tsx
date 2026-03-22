@@ -39,7 +39,15 @@ export interface ApprovalRequest {
     partySize: number;
     estimatedCost: string;
     confidence: number;
+    workflow?: "restaurant" | "cinema";
+    actionLabel?: string;
+    pauseReason?: string | null;
   };
+}
+
+export interface PendingItineraryConfirmation {
+  id: string;
+  kind: "itinerary_confirmation";
 }
 
 export interface MemoryEntry {
@@ -49,10 +57,12 @@ export interface MemoryEntry {
   label: string;
   value: string;
   timestamp: string;
+  scope?: string;
 }
 
 export interface Skill {
   id: string;
+  skillKey?: string;
   title: string;
   description: string;
   source: string;
@@ -60,6 +70,8 @@ export interface Skill {
   usageCount: number;
   createdAt: string;
   agentId: string;
+  scope?: string;
+  improvementLabel?: string;
 }
 
 export interface AdaptationEvent {
@@ -87,6 +99,9 @@ export interface CallState {
   duration: number;
   transcript: { speaker: string; text: string }[];
   status: "ringing" | "connected" | "ended";
+  providerMode?: "live" | "simulation" | "fallback";
+  transcriptMode?: "live" | "simulated" | "none";
+  handoffLabel?: string | null;
 }
 
 export interface SMSMessage {
@@ -105,12 +120,15 @@ export interface OptimizationData {
   tradeoffs: { label: string; original: string; optimized: string }[];
 }
 
-export type MerchantOfferType = "accept" | "counter" | "offpeak" | "promo";
+export type MerchantOfferType = "accept" | "counter" | "offpeak" | "promo" | "no_response";
 
 export interface MerchantOffer {
   id: string;
   venueName: string;
+  workflow?: "restaurant" | "cinema";
+  requestLabel?: string;
   offerType: MerchantOfferType;
+  merchantOutcome?: MerchantOfferType;
   originalRequest: string;
   merchantResponse: string;
   details: {
@@ -121,6 +139,10 @@ export interface MerchantOffer {
     note?: string;
   };
   status: "pending" | "accepted" | "rejected" | "countered";
+  negotiatorDecision?: "accept" | "counter" | "defer" | "reject" | null;
+  decision?: "accept" | "counter" | "defer" | "reject";
+  finalResolution?: "pending" | "booked" | "rejected_by_user" | "manual_followup" | "abandoned";
+  finalized?: boolean;
   timestamp: string;
 }
 
@@ -130,6 +152,11 @@ export interface MissionSummary {
   costBreakdown: { label: string; amount: string }[];
   timeTaken: string;
   optimization?: OptimizationData;
+  autonomyRecap?: {
+    modeLabel: string;
+    requiredManualConfirmation: boolean;
+    constraintTriggered: boolean;
+  };
 }
 
 export interface SourceReference {
@@ -138,6 +165,9 @@ export interface SourceReference {
   type: "api" | "web" | "call" | "sms" | "cache" | "fallback";
   freshness: "live" | "cached" | "stale" | "simulated";
   verified: boolean;
+  bookingPath?: "direct" | "reseller" | "unknown";
+  risk?: "low" | "medium" | "high";
+  checkedAt?: string;
 }
 
 export interface ReasoningEntry {
@@ -153,6 +183,18 @@ export interface ReasoningEntry {
   timestamp: string;
 }
 
+export interface RecommendationInsight {
+  id: string;
+  workflow: "restaurant" | "cinema";
+  venueName: string;
+  summary: string;
+  confidence: number;
+  sources: SourceReference[];
+  primaryBookingPath: "direct" | "reseller" | "unknown";
+  primaryRisk: "low" | "medium" | "high";
+  fallbackMode: boolean;
+}
+
 export interface MissionState {
   missionStatus: "idle" | "live" | "completed";
   agents: Agent[];
@@ -160,6 +202,7 @@ export interface MissionState {
   call: CallState;
   smsLog: SMSMessage[];
   merchantOffers: MerchantOffer[];
+  recommendationInsights: RecommendationInsight[];
   summary: MissionSummary;
   reasoning: ReasoningEntry[];
   memory: MemoryEntry[];
@@ -171,6 +214,7 @@ export interface MissionState {
   autonomyMode: AutonomyMode;
   autonomyConstraints: AutonomyConstraints;
   pendingApproval: ApprovalRequest | null;
+  pendingItineraryConfirmation: PendingItineraryConfirmation | null;
 }
 
 interface MissionContextType extends MissionState {
@@ -183,11 +227,12 @@ interface MissionContextType extends MissionState {
   addSMS: (msg: SMSMessage) => void;
   addMerchantOffer: (offer: MerchantOffer) => void;
   updateMerchantOffer: (id: string, updates: Partial<MerchantOffer>) => void;
+  addRecommendationInsight: (insight: RecommendationInsight) => void;
   setSummary: (s: MissionSummary) => void;
   addReasoning: (entry: ReasoningEntry) => void;
   addMemory: (entry: MemoryEntry) => void;
   addSkill: (skill: Skill) => void;
-  updateSkillUsage: (id: string) => void;
+  updateSkill: (skillKey: string, updates: Partial<Skill>) => void;
   addAdaptation: (event: AdaptationEvent) => void;
   setTrainingMode: (on: boolean) => void;
   setDemoMode: (on: boolean) => void;
@@ -195,6 +240,7 @@ interface MissionContextType extends MissionState {
   setAutonomyMode: (mode: AutonomyMode) => void;
   setAutonomyConstraints: (constraints: Partial<AutonomyConstraints>) => void;
   setPendingApproval: (request: ApprovalRequest | null) => void;
+  setPendingItineraryConfirmation: (request: PendingItineraryConfirmation | null) => void;
   hydrateMission: (state: Partial<MissionState>) => void;
   resetMission: () => void;
 }
@@ -215,7 +261,17 @@ const defaultAgents: Agent[] = [
   { id: "research", name: "Research Agent", emoji: "🔍", status: "idle", currentTask: "", liveText: "", confidence: 0, personality: personalities.research, listeningTo: null },
 ];
 
-const defaultCall: CallState = { active: false, caller: "", receiver: "", duration: 0, transcript: [], status: "ended" };
+const defaultCall: CallState = {
+  active: false,
+  caller: "",
+  receiver: "",
+  duration: 0,
+  transcript: [],
+  status: "ended",
+  providerMode: "live",
+  transcriptMode: "none",
+  handoffLabel: null,
+};
 
 const defaultSummary: MissionSummary = { visible: false, result: "", costBreakdown: [], timeTaken: "" };
 const defaultAutonomyConstraints: AutonomyConstraints = {
@@ -232,6 +288,7 @@ export function createInitialMissionState(): MissionState {
     call: { ...defaultCall, transcript: [] },
     smsLog: [],
     merchantOffers: [],
+    recommendationInsights: [],
     summary: { ...defaultSummary, costBreakdown: [] },
     reasoning: [],
     memory: [],
@@ -243,6 +300,7 @@ export function createInitialMissionState(): MissionState {
     autonomyMode: "confirm",
     autonomyConstraints: { ...defaultAutonomyConstraints },
     pendingApproval: null,
+    pendingItineraryConfirmation: null,
   };
 }
 
@@ -261,6 +319,7 @@ function normalizeMissionState(state: Partial<MissionState>): MissionState {
     },
     smsLog: state.smsLog ?? base.smsLog,
     merchantOffers: state.merchantOffers ?? base.merchantOffers,
+    recommendationInsights: state.recommendationInsights ?? base.recommendationInsights,
     summary: {
       ...base.summary,
       ...state.summary,
@@ -273,6 +332,7 @@ function normalizeMissionState(state: Partial<MissionState>): MissionState {
       ...state.autonomyConstraints,
     },
     pendingApproval: state.pendingApproval ?? base.pendingApproval,
+    pendingItineraryConfirmation: state.pendingItineraryConfirmation ?? base.pendingItineraryConfirmation,
     reasoning: state.reasoning ?? base.reasoning,
     memory: state.memory ?? base.memory,
     skills: state.skills ?? base.skills,
@@ -333,6 +393,16 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const addRecommendationInsight = useCallback((insight: RecommendationInsight) => {
+    setState((s) => ({
+      ...s,
+      recommendationInsights: [
+        ...s.recommendationInsights.filter((entry) => entry.workflow !== insight.workflow),
+        insight,
+      ],
+    }));
+  }, []);
+
   const setSummary = useCallback((summary: MissionSummary) => {
     setState((s) => ({ ...s, summary }));
   }, []);
@@ -349,10 +419,10 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, skills: [...s.skills, skill] }));
   }, []);
 
-  const updateSkillUsage = useCallback((id: string) => {
+  const updateSkill = useCallback((skillKey: string, updates: Partial<Skill>) => {
     setState((s) => ({
       ...s,
-      skills: s.skills.map((sk) => (sk.id === id ? { ...sk, usageCount: sk.usageCount + 1 } : sk)),
+      skills: s.skills.map((sk) => (sk.skillKey === skillKey ? { ...sk, ...updates } : sk)),
     }));
   }, []);
 
@@ -390,6 +460,13 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, pendingApproval }));
   }, []);
 
+  const setPendingItineraryConfirmation = useCallback(
+    (pendingItineraryConfirmation: PendingItineraryConfirmation | null) => {
+      setState((s) => ({ ...s, pendingItineraryConfirmation }));
+    },
+    [],
+  );
+
   const hydrateMission = useCallback((nextState: Partial<MissionState>) => {
     setState(normalizeMissionState(nextState));
   }, []);
@@ -403,10 +480,10 @@ export function MissionProvider({ children }: { children: ReactNode }) {
       value={{
         ...state, setMissionStatus, updateAgent, addTimelineEntry, updateTimelineEntry,
         setCall, addCallTranscript, addSMS, addMerchantOffer, updateMerchantOffer,
-        setSummary, addReasoning, addMemory,
-        addSkill, updateSkillUsage, addAdaptation, setTrainingMode,
+        addRecommendationInsight, setSummary, addReasoning, addMemory,
+        addSkill, updateSkill, addAdaptation, setTrainingMode,
         setDemoMode, setUserInput, setAutonomyMode, setAutonomyConstraints,
-        setPendingApproval, hydrateMission, resetMission,
+        setPendingApproval, setPendingItineraryConfirmation, hydrateMission, resetMission,
       }}
     >
       {children}

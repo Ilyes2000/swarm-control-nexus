@@ -75,6 +75,10 @@ app.post("/api/mission/reset", (_req, res) => {
 app.post("/api/webhooks/telnyx/sms", async (req, res) => {
   try {
     const parsed = telnyxSmsClient.parseInboundWebhook(req.body);
+    if (!parsed.text) {
+      res.status(202).json({ ok: true, ignored: true });
+      return;
+    }
     await orchestrator.handleInboundSms(parsed);
     res.status(202).json({ ok: true });
   } catch (error) {
@@ -85,6 +89,10 @@ app.post("/api/webhooks/telnyx/sms", async (req, res) => {
 app.post("/api/webhooks/telnyx/merchant-sms", async (req, res) => {
   try {
     const parsed = telnyxSmsClient.parseInboundWebhook(req.body);
+    if (!parsed.text) {
+      res.status(202).json({ ok: true, ignored: true });
+      return;
+    }
     await orchestrator.handleInboundMerchantSms(parsed);
     res.status(202).json({ ok: true });
   } catch (error) {

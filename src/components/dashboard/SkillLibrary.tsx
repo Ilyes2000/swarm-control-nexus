@@ -11,7 +11,6 @@ function SkillCard({ skill }: { skill: Skill }) {
       transition={{ type: "spring", damping: 18 }}
       className="rounded-lg border border-neon-cyan/20 bg-neon-cyan/5 p-2 relative overflow-hidden"
     >
-      {/* glow pulse on creation */}
       <motion.div
         initial={{ opacity: 0.5 }}
         animate={{ opacity: 0 }}
@@ -26,13 +25,17 @@ function SkillCard({ skill }: { skill: Skill }) {
         <span className="text-[8px] font-mono text-neon-cyan/70">v{skill.version}</span>
       </div>
       <p className="text-[9px] text-muted-foreground leading-relaxed mb-1.5">{skill.description}</p>
-      <div className="flex items-center gap-2">
+      {skill.improvementLabel && (
+        <div className="mb-1.5 inline-flex items-center rounded-full border border-neon-cyan/30 bg-neon-cyan/10 px-1.5 py-0.5 text-[8px] font-mono text-neon-cyan">
+          {skill.improvementLabel}
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
         <span className="text-[8px] font-mono text-muted-foreground/70 flex items-center gap-0.5">
           <RotateCw className="w-2 h-2" /> {skill.usageCount}x used
         </span>
-        <span className="text-[8px] font-mono text-destructive/60">
-          ← {skill.source}
-        </span>
+        <span className="text-[8px] font-mono text-destructive/60">← {skill.source}</span>
+        {skill.scope && <span className="text-[8px] font-mono text-muted-foreground/70">{skill.scope}</span>}
       </div>
     </motion.div>
   );
@@ -52,16 +55,14 @@ export function SkillLibrary() {
         <Zap className="w-3.5 h-3.5 text-neon-cyan" />
         Skill Library
         {skills.length > 0 && (
-          <span className="text-[9px] font-mono text-neon-cyan bg-neon-cyan/10 px-1.5 rounded-full">
-            {skills.length}
-          </span>
+          <span className="text-[9px] font-mono text-neon-cyan bg-neon-cyan/10 px-1.5 rounded-full">{skills.length}</span>
         )}
       </h2>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin pr-1 space-y-2">
         <AnimatePresence>
           {skills.map((skill) => (
-            <SkillCard key={skill.id} skill={skill} />
+            <SkillCard key={skill.skillKey ?? skill.id} skill={skill} />
           ))}
         </AnimatePresence>
 

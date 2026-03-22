@@ -5,7 +5,24 @@ export function createMissionWebSocketHub({ getState }) {
   const clients = new Set();
   const wss = new WebSocketServer({ noServer: true });
 
+  const heartbeatInterval = setInterval(() => {
+    for (const client of clients) {
+      if (!client.isAlive) {
+        client.terminate();
+        clients.delete(client);
+        continue;
+      }
+      client.isAlive = false;
+      client.ping();
+    }
+  }, 30000);
+
   wss.on("connection", (socket) => {
+    socket.isAlive = true;
+    socket.on("pong", () => {
+      socket.isAlive = true;
+    });
+
     clients.add(socket);
     socket.send(JSON.stringify(createEvent("snapshot", getState())));
 
@@ -37,6 +54,7 @@ export function createMissionWebSocketHub({ getState }) {
       }
     },
     close() {
+      clearInterval(heartbeatInterval);
       for (const client of clients) {
         client.close();
       }

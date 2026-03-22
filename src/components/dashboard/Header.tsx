@@ -18,6 +18,10 @@ export function Header() {
     userInput,
     autonomyMode,
     autonomyConstraints,
+    merchantOffers,
+    pendingApproval,
+    recommendationInsights,
+    summary,
     setUserInput,
     setDemoMode,
     setAutonomyMode,
@@ -81,6 +85,44 @@ export function Header() {
     { id: "confirm", label: "Call + Confirm", icon: <ShieldCheck className="w-3.5 h-3.5" /> },
     { id: "autobook", label: "Auto-Book", icon: <Wand2 className="w-3.5 h-3.5" /> },
   ] as const;
+  const latestMerchantOffer = merchantOffers[merchantOffers.length - 1];
+  const hasDirectRestaurantPath = recommendationInsights.some(
+    (insight) => insight.workflow === "restaurant" && insight.primaryBookingPath === "direct",
+  );
+  const hasResellerPath = recommendationInsights.some((insight) => insight.primaryBookingPath === "reseller");
+  const hasHighRiskSource = recommendationInsights.some((insight) => insight.primaryRisk === "high");
+  const hasMediumRiskSource = recommendationInsights.some((insight) => insight.primaryRisk === "medium");
+  const hasFallbackSource = recommendationInsights.some((insight) => insight.fallbackMode);
+  const missionSignals = [
+    hasDirectRestaurantPath ? { label: "DIRECT BOOKING PATH", tone: "success" } : null,
+    hasResellerPath ? { label: "RESELLER RISK", tone: "warning" } : null,
+    hasHighRiskSource
+      ? { label: "HIGH RISK SOURCE", tone: "destructive" }
+      : hasMediumRiskSource
+        ? { label: "MEDIUM RISK SOURCE", tone: "warning" }
+        : null,
+    hasFallbackSource ? { label: "FALLBACK SOURCE", tone: "warning" } : null,
+    pendingApproval
+      ? {
+          label: summary.autonomyRecap?.constraintTriggered ? "AUTO-BOOK PAUSED" : "APPROVAL REQUIRED",
+          tone: "warning",
+        }
+      : null,
+    latestMerchantOffer?.merchantOutcome === "counter"
+      ? { label: "MERCHANT COUNTERED", tone: "primary" }
+      : latestMerchantOffer?.finalResolution === "manual_followup"
+        ? { label: "MANUAL FOLLOW-UP", tone: "warning" }
+        : null,
+    summary.autonomyRecap?.constraintTriggered
+      ? { label: "CONSTRAINT PAUSE TRIGGERED", tone: "warning" }
+      : null,
+  ].filter(Boolean) as { label: string; tone: "success" | "warning" | "destructive" | "primary" }[];
+  const signalCls: Record<(typeof missionSignals)[number]["tone"], string> = {
+    success: "border-success/30 bg-success/10 text-success",
+    warning: "border-warning/30 bg-warning/10 text-warning",
+    destructive: "border-destructive/30 bg-destructive/10 text-destructive",
+    primary: "border-primary/30 bg-primary/10 text-primary",
+  };
 
   return (
     <header className="glass-panel px-6 py-3 flex flex-wrap items-center gap-4 relative overflow-hidden">
@@ -302,6 +344,19 @@ export function Header() {
               )}
             </AnimatePresence>
           </div>
+        </div>
+      )}
+
+      {missionSignals.length > 0 && (
+        <div className="basis-full flex flex-wrap gap-2">
+          {missionSignals.map((signal) => (
+            <div
+              key={signal.label}
+              className={`rounded-full border px-2 py-1 text-[10px] font-mono tracking-wide ${signalCls[signal.tone]}`}
+            >
+              {signal.label}
+            </div>
+          ))}
         </div>
       )}
     </header>

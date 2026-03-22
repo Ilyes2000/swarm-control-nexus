@@ -7,6 +7,8 @@ import type {
   MemoryEntry,
   MissionState,
   MissionSummary,
+  PendingItineraryConfirmation,
+  RecommendationInsight,
   ReasoningEntry,
   Skill,
   SMSMessage,
@@ -33,8 +35,11 @@ export interface MissionEventActions {
   setDemoMode: (enabled: boolean) => void;
   setUserInput: (input: string) => void;
   setPendingApproval: (request: ApprovalRequest | null) => void;
+  setPendingItineraryConfirmation: (request: PendingItineraryConfirmation | null) => void;
   addMerchantOffer: (offer: MerchantOffer) => void;
   updateMerchantOffer: (id: string, updates: Partial<MerchantOffer>) => void;
+  addRecommendationInsight: (insight: RecommendationInsight) => void;
+  updateSkill: (skillKey: string, updates: Partial<Skill>) => void;
 }
 
 export interface MissionEventMap {
@@ -54,8 +59,12 @@ export interface MissionEventMap {
   training_mode: { enabled: boolean };
   approval_request: ApprovalRequest;
   approval_cleared: { id?: string | null };
+  itinerary_confirmation_request: PendingItineraryConfirmation;
+  itinerary_confirmation_cleared: { id?: string | null };
   merchant_offer: MerchantOffer;
   merchant_offer_update: { id: string; updates: Partial<MerchantOffer> };
+  recommendation_insight: RecommendationInsight;
+  skill_update: { skillKey: string; updates: Partial<Skill> };
   error: { message: string; detail?: string };
 }
 
@@ -108,6 +117,9 @@ export function applyMissionEvent(event: MissionEvent, actions: MissionEventActi
     case "skill":
       actions.addSkill(event.payload);
       break;
+    case "skill_update":
+      actions.updateSkill(event.payload.skillKey, event.payload.updates);
+      break;
     case "adaptation":
       actions.addAdaptation(event.payload);
       break;
@@ -120,11 +132,20 @@ export function applyMissionEvent(event: MissionEvent, actions: MissionEventActi
     case "approval_cleared":
       actions.setPendingApproval(null);
       break;
+    case "itinerary_confirmation_request":
+      actions.setPendingItineraryConfirmation(event.payload);
+      break;
+    case "itinerary_confirmation_cleared":
+      actions.setPendingItineraryConfirmation(null);
+      break;
     case "merchant_offer":
       actions.addMerchantOffer(event.payload);
       break;
     case "merchant_offer_update":
       actions.updateMerchantOffer(event.payload.id, event.payload.updates);
+      break;
+    case "recommendation_insight":
+      actions.addRecommendationInsight(event.payload);
       break;
     case "error":
       break;

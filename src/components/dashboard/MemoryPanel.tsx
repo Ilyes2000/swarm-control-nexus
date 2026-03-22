@@ -50,7 +50,14 @@ export function MemoryPanel() {
                     className={`rounded p-2 mb-1.5 border ${config.color}`}
                   >
                     <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-[10px] font-semibold">{entry.label}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-semibold">{entry.label}</span>
+                        {entry.scope && (
+                          <span className="text-[8px] font-mono text-muted-foreground bg-background/40 px-1 rounded">
+                            {entry.scope}
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[8px] font-mono text-muted-foreground">{entry.timestamp}</span>
                     </div>
                     <p className="text-[10px] font-mono text-foreground/70 leading-relaxed">{entry.value}</p>

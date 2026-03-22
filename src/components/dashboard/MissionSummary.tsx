@@ -2,11 +2,24 @@ import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, Edit, TrendingDown, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useMission } from "@/contexts/MissionContext";
+import { useMissionRuntime } from "@/hooks/useMissionRuntime";
 
 export function MissionSummary() {
-  const { summary, autonomyMode } = useMission();
+  const { summary, autonomyMode, merchantOffers, pendingItineraryConfirmation } = useMission();
+  const { interruptMission } = useMissionRuntime();
   const autonomyLabel =
     autonomyMode === "suggest" ? "Suggest Only" : autonomyMode === "confirm" ? "Call + Confirm" : "Auto-Book";
+  const autonomyRecap = summary.autonomyRecap;
+  const latestResolution = merchantOffers[merchantOffers.length - 1]?.finalResolution;
+  const summaryTitle =
+    autonomyMode === "suggest"
+      ? "Recommendation Only"
+      : pendingItineraryConfirmation
+        ? "Pending Confirmation"
+        : latestResolution === "manual_followup" || latestResolution === "abandoned" || latestResolution === "rejected_by_user"
+          ? "Manual Follow-up Needed"
+          : "Booked";
+  const showSummaryActions = Boolean(pendingItineraryConfirmation);
 
   return (
     <AnimatePresence>
@@ -16,20 +29,38 @@ export function MissionSummary() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 40 }}
           transition={{ type: "spring", damping: 20 }}
-          className="glass-panel p-5 neon-glow"
+            className="glass-panel p-5 neon-glow"
         >
           <div className="flex items-start gap-4">
             <div className="flex-1 space-y-3">
               <h2 className="text-sm font-bold flex items-center gap-2">
                 <CheckCircle className="w-4 h-4 text-success" />
-                Mission Complete
+                {summaryTitle}
               </h2>
               <div className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] font-mono text-primary">
                 Autonomy: {autonomyLabel}
               </div>
+              {autonomyRecap && (
+                <div className="flex flex-wrap gap-2">
+                  <div className="inline-flex items-center rounded-full border border-border/40 bg-muted/30 px-2 py-1 text-[10px] font-mono text-foreground/70">
+                    {autonomyRecap.modeLabel}
+                  </div>
+                  <div className="inline-flex items-center rounded-full border border-border/40 bg-muted/30 px-2 py-1 text-[10px] font-mono text-foreground/70">
+                    {autonomyRecap.requiredManualConfirmation ? "Manual confirmation used" : "No manual confirmation"}
+                  </div>
+                  <div
+                    className={`inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-mono ${
+                      autonomyRecap.constraintTriggered
+                        ? "border-warning/30 bg-warning/10 text-warning"
+                        : "border-success/30 bg-success/10 text-success"
+                    }`}
+                  >
+                    {autonomyRecap.constraintTriggered ? "Constraint pause triggered" : "No constraint pause"}
+                  </div>
+                </div>
+              )}
               <p className="text-xs text-foreground/80 leading-relaxed">{summary.result}</p>
 
-              {/* Optimization Visualization */}
               {summary.optimization && (
                 <motion.div
                   initial={{ opacity: 0 }}
@@ -84,19 +115,34 @@ export function MissionSummary() {
                 ))}
               </div>
 
-              <p className="text-[10px] text-muted-foreground font-mono">⏱ Completed in {summary.timeTaken}</p>
+              <p className="text-[10px] text-muted-foreground font-mono">Completed in {summary.timeTaken}</p>
             </div>
 
-            <div className="flex gap-2 shrink-0">
-              <Button size="sm" className="bg-success hover:bg-success/90 text-success-foreground">
-                <CheckCircle className="w-3 h-3" />
-                Confirm
-              </Button>
-              <Button size="sm" variant="outline">
-                <Edit className="w-3 h-3" />
-                Modify
-              </Button>
-            </div>
+            {showSummaryActions && (
+              <div className="flex gap-2 shrink-0">
+                <Button
+                  size="sm"
+                  className="bg-success hover:bg-success/90 text-success-foreground"
+                  onClick={() => void interruptMission({ command: "itinerary_confirm" })}
+                >
+                  <CheckCircle className="w-3 h-3" />
+                  Confirm
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    void interruptMission({
+                      command: "itinerary_modify",
+                      details: { note: "Modify the final itinerary from the summary panel" },
+                    })
+                  }
+                >
+                  <Edit className="w-3 h-3" />
+                  Modify
+                </Button>
+              </div>
+            )}
           </div>
         </motion.div>
       )}

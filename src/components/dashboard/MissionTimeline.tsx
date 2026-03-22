@@ -72,9 +72,11 @@ export function MissionTimeline() {
                   : ""
               } ${entry.description.includes("Learning from failure") || entry.description.includes("New skill") ? "learning-active" : ""}`}
             >
-              <div className={`w-8 h-8 rounded-full bg-muted border flex items-center justify-center text-sm shrink-0 z-10 ${
-                entry.status === "failed" ? "border-destructive/50" : "border-border"
-              }`}>
+              <div
+                className={`w-8 h-8 rounded-full bg-muted border flex items-center justify-center text-sm shrink-0 z-10 ${
+                  entry.status === "failed" ? "border-destructive/50" : "border-border"
+                }`}
+              >
                 {entry.agentEmoji}
               </div>
 
@@ -84,14 +86,16 @@ export function MissionTimeline() {
                   <span className="text-[10px] font-semibold text-foreground/70">{entry.agentName}</span>
                   {statusIcon[entry.status]}
                   {entry.retryCount && entry.retryCount > 0 && (
-                    <span className="text-[8px] font-mono text-warning bg-warning/10 px-1 rounded">
-                      retry #{entry.retryCount}
-                    </span>
+                    <span className="text-[8px] font-mono text-warning bg-warning/10 px-1 rounded">retry #{entry.retryCount}</span>
                   )}
                 </div>
-                <p className={`text-xs leading-relaxed ${
-                  entry.status === "failed" ? "text-destructive/80 line-through" : "text-foreground/80"
-                }`}>{entry.description}</p>
+                <p
+                  className={`text-xs leading-relaxed ${
+                    entry.status === "failed" ? "text-destructive/80 line-through" : "text-foreground/80"
+                  }`}
+                >
+                  {entry.description}
+                </p>
               </div>
             </motion.div>
           ))}
@@ -108,19 +112,20 @@ export function MissionTimeline() {
             >
               <div className="mb-2 flex items-center gap-2">
                 <ShieldAlert className="h-4 w-4 text-warning" />
-                <span className="text-[11px] font-semibold uppercase tracking-widest text-warning">
-                  Approval Required
-                </span>
+                <span className="text-[11px] font-semibold uppercase tracking-widest text-warning">Approval Required</span>
               </div>
 
               <div className="space-y-1 text-xs text-foreground/85">
                 <p>
-                  Book table for {pendingApproval.details.partySize} at {pendingApproval.details.venue} at{" "}
-                  {pendingApproval.details.time}?
+                  {pendingApproval.details.actionLabel ?? "Finalize booking"} for {pendingApproval.details.partySize} at{" "}
+                  {pendingApproval.details.venue} at {pendingApproval.details.time}?
                 </p>
                 <p className="font-mono text-[11px] text-muted-foreground">
                   {pendingApproval.details.estimatedCost} • {pendingApproval.details.confidence}% confidence
                 </p>
+                {pendingApproval.details.pauseReason && (
+                  <p className="text-[11px] font-mono text-warning">{pendingApproval.details.pauseReason}</p>
+                )}
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-2">

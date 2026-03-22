@@ -14,6 +14,10 @@ function createAbortError() {
   return new Error("Mission run aborted");
 }
 
+function isAbortError(error) {
+  return error instanceof Error && error.message === "Mission run aborted";
+}
+
 function nowLabel() {
   return new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -58,11 +62,53 @@ function parseClockValue(value) {
   return hours * 60 + minutes;
 }
 
+function normalizePhoneValue(value) {
+  if (!value) {
+    return "";
+  }
+
+  const digits = String(value).replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return digits.slice(1);
+  }
+
+  return digits;
+}
+
+function formatAutonomyLabel(mode) {
+  if (mode === "suggest") {
+    return "Suggest Only";
+  }
+  if (mode === "confirm") {
+    return "Call + Confirm";
+  }
+  return "Auto-Book";
+}
+
+function buildVenueScope(targetName, targetPhone) {
+  const normalizedPhone = normalizePhoneValue(targetPhone);
+  if (normalizedPhone) {
+    return `venue:${normalizedPhone}`;
+  }
+  return `venue:${String(targetName || "unknown").toLowerCase().replace(/\s+/g, "-")}`;
+}
+
+function buildSkillKey(title, scope) {
+  return `${title}::${scope || "global"}`;
+}
+
+function summarizeRecommendation(workflow, venueName, details) {
+  if (workflow === "restaurant") {
+    return `${venueName} at ${details?.time || "the preferred dinner slot"}`;
+  }
+  return `${venueName} for ${details?.title || "the selected movie"} at ${details?.time || "the preferred showtime"}`;
+}
+
 export function parseMerchantResponseText(raw) {
   const text = (raw || "").trim();
   const details = {};
 
-  if (/^(ACCEPT|YES|CONFIRMED|OK)$/i.test(text)) {
+  if (/^\s*(ACCEPT|YES|CONFIRMED|OK)\b/i.test(text)) {
     return { offerType: "accept", text, details };
   }
 
@@ -111,7 +157,11 @@ export class MissionOrchestrator {
     this.pendingApprovalTimer = null;
     this.pendingMerchantResolver = null;
     this.pendingMerchantTimer = null;
-    this.pendingMerchantVenue = null;
+    this.pendingMerchantTarget = null;
+    this.autonomyRecap = {
+      requiredManualConfirmation: false,
+      constraintTriggered: false
+    };
   }
 
   getState() {
@@ -183,6 +233,14 @@ export class MissionOrchestrator {
     this.broadcast("merchant_offer_update", { id, updates });
   }
 
+  addRecommendationInsight(insight) {
+    this.state.recommendationInsights = [
+      ...this.state.recommendationInsights.filter((entry) => entry.workflow !== insight.workflow),
+      insight
+    ];
+    this.broadcast("recommendation_insight", insight);
+  }
+
   setSummary(summary) {
     this.state.summary = summary;
     this.broadcast("summary", summary);
@@ -201,6 +259,13 @@ export class MissionOrchestrator {
   addSkill(skill) {
     this.state.skills.push(skill);
     this.broadcast("skill", skill);
+  }
+
+  updateSkill(skillKey, updates) {
+    this.state.skills = this.state.skills.map((skill) =>
+      skill.skillKey === skillKey ? { ...skill, ...updates } : skill
+    );
+    this.broadcast("skill_update", { skillKey, updates });
   }
 
   addAdaptation(event) {
@@ -223,9 +288,59 @@ export class MissionOrchestrator {
     this.broadcast("approval_cleared", {});
   }
 
+  setPendingItineraryConfirmation(request) {
+    this.state.pendingItineraryConfirmation = request;
+    if (request) {
+      this.broadcast("itinerary_confirmation_request", request);
+      return;
+    }
+
+    this.broadcast("itinerary_confirmation_cleared", {});
+  }
+
   nextId(prefix) {
     this.sequenceNumber += 1;
     return `${prefix}-${this.sequenceNumber}`;
+  }
+
+  buildAutonomyRecap() {
+    return {
+      modeLabel: formatAutonomyLabel(this.state.autonomyMode),
+      requiredManualConfirmation: this.autonomyRecap.requiredManualConfirmation,
+      constraintTriggered: this.autonomyRecap.constraintTriggered
+    };
+  }
+
+  publishSummary(summary) {
+    this.setSummary({
+      ...summary,
+      autonomyRecap: this.buildAutonomyRecap()
+    });
+  }
+
+  upsertSkill(skill) {
+    const skillKey = skill.skillKey || buildSkillKey(skill.title, skill.scope);
+    const existing = this.state.skills.find((entry) => entry.skillKey === skillKey);
+    if (existing) {
+      this.updateSkill(skillKey, {
+        usageCount: existing.usageCount + 1,
+        improvementLabel: skill.improvementLabel ?? existing.improvementLabel
+      });
+      return;
+    }
+
+    this.addSkill({
+      ...skill,
+      skillKey
+    });
+  }
+
+  resetAllAgentsToIdle() {
+    for (const agent of this.state.agents) {
+      if (agent.status !== "idle") {
+        this.updateAgent(agent.id, { status: "idle", currentTask: "", liveText: "", confidence: 0, listeningTo: null });
+      }
+    }
   }
 
   ensureActiveRun(signal) {
@@ -242,6 +357,11 @@ export class MissionOrchestrator {
     }
 
     await new Promise((resolve, reject) => {
+      if (signal.aborted) {
+        reject(createAbortError());
+        return;
+      }
+
       const timer = setTimeout(() => {
         signal.removeEventListener("abort", onAbort);
         resolve();
@@ -257,6 +377,8 @@ export class MissionOrchestrator {
   }
 
   resetMission({ broadcast = true } = {}) {
+    this.resetAllAgentsToIdle();
+
     if (this.currentController) {
       this.currentController.abort();
     }
@@ -271,8 +393,12 @@ export class MissionOrchestrator {
       this.pendingMerchantTimer = null;
     }
     this.pendingMerchantResolver = null;
-    this.pendingMerchantVenue = null;
+    this.pendingMerchantTarget = null;
     this.merchantOfferIndex = 0;
+    this.autonomyRecap = {
+      requiredManualConfirmation: false,
+      constraintTriggered: false
+    };
 
     this.state = createInitialMissionState();
     this.currentController = null;
@@ -309,6 +435,7 @@ export class MissionOrchestrator {
           return;
         }
 
+        this.resetAllAgentsToIdle();
         const message = error instanceof Error ? error.message : "Mission failed";
         this.broadcast("error", { message });
         this.addTimelineEntry({
@@ -352,7 +479,24 @@ export class MissionOrchestrator {
         const runId = this.currentRunId;
         const signal = this.currentController.signal;
 
-        this.currentRunPromise = this.runInterrupt({ command: note, mode, signal }).finally(() => {
+        this.currentRunPromise = this.runInterrupt({ command: note, mode, signal }).catch((error) => {
+          if (signal.aborted || isAbortError(error)) {
+            return;
+          }
+
+          const message = error instanceof Error ? error.message : "Mission update failed";
+          this.broadcast("error", { message });
+          this.addTimelineEntry({
+            id: this.nextId("timeline"),
+            timestamp: nowLabel(),
+            agentId: "planner",
+            agentEmoji: "⚠️",
+            agentName: "System",
+            description: `Mission update failed: ${message}`,
+            status: "failed"
+          });
+          this.setMissionStatus("completed", mode);
+        }).finally(() => {
           if (this.currentRunId === runId) {
             this.currentController = null;
           }
@@ -362,6 +506,61 @@ export class MissionOrchestrator {
       }
 
       this.resolvePendingApproval({ command, details });
+      return { ok: true };
+    }
+
+    if (this.state.pendingItineraryConfirmation && (command === "itinerary_confirm" || command === "itinerary_modify")) {
+      const mode = this.state.demoMode ? "simulation" : "live";
+
+      if (command === "itinerary_confirm") {
+        this.addTimelineEntry({
+          id: this.nextId("timeline"),
+          timestamp: nowLabel(),
+          agentId: "scheduler",
+          agentEmoji: "✅",
+          agentName: "User",
+          description: "User confirmed the itinerary.",
+          status: "success"
+        });
+        this.setPendingItineraryConfirmation(null);
+        return { ok: true };
+      }
+
+      this.setPendingItineraryConfirmation(null);
+      if (this.currentController) {
+        this.currentController.abort();
+      }
+
+      this.currentRunId += 1;
+      this.currentController = new AbortController();
+      const runId = this.currentRunId;
+      const signal = this.currentController.signal;
+      const note = details?.note?.trim() || "Modify the final itinerary";
+      this.setMissionStatus("live", mode);
+
+      this.currentRunPromise = this.runInterrupt({ command: note, mode, signal }).catch((error) => {
+        if (signal.aborted || isAbortError(error)) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : "Mission update failed";
+        this.broadcast("error", { message });
+        this.addTimelineEntry({
+          id: this.nextId("timeline"),
+          timestamp: nowLabel(),
+          agentId: "planner",
+          agentEmoji: "⚠️",
+          agentName: "System",
+          description: `Mission update failed: ${message}`,
+          status: "failed"
+        });
+        this.setMissionStatus("completed", mode);
+      }).finally(() => {
+        if (this.currentRunId === runId) {
+          this.currentController = null;
+        }
+      });
+
       return { ok: true };
     }
 
@@ -376,7 +575,24 @@ export class MissionOrchestrator {
     const runId = this.currentRunId;
     const signal = this.currentController.signal;
 
-    this.currentRunPromise = this.runInterrupt({ command, mode, signal }).finally(() => {
+    this.currentRunPromise = this.runInterrupt({ command, mode, signal }).catch((error) => {
+      if (signal.aborted || isAbortError(error)) {
+        return;
+      }
+
+      const message = error instanceof Error ? error.message : "Mission update failed";
+      this.broadcast("error", { message });
+      this.addTimelineEntry({
+        id: this.nextId("timeline"),
+        timestamp: nowLabel(),
+        agentId: "planner",
+        agentEmoji: "⚠️",
+        agentName: "System",
+        description: `Mission update failed: ${message}`,
+        status: "failed"
+      });
+      this.setMissionStatus("completed", mode);
+    }).finally(() => {
       if (this.currentRunId === runId) {
         this.currentController = null;
       }
@@ -405,7 +621,7 @@ export class MissionOrchestrator {
     }
     const resolver = this.pendingMerchantResolver;
     this.pendingMerchantResolver = null;
-    this.pendingMerchantVenue = null;
+    this.pendingMerchantTarget = null;
     if (resolver) {
       resolver(response);
     }
@@ -423,10 +639,14 @@ export class MissionOrchestrator {
         agentId: "negotiation",
         agentEmoji: "⚠️",
         agentName: "Merchant",
-        description: `No phone number for ${venueName} — auto-accepting.`,
-        status: "success"
+        description: `No phone number for ${venueName} — manual follow-up required.`,
+        status: "fallback"
       });
-      return { offerType: "accept", text: "Auto-accepted (no merchant phone)", details: {}, autoAccepted: true };
+      return {
+        offerType: "no_response",
+        text: "Manual follow-up required (no merchant phone number)",
+        details: { note: "No merchant phone number" }
+      };
     }
 
     try {
@@ -438,10 +658,14 @@ export class MissionOrchestrator {
         agentId: "negotiation",
         agentEmoji: "⚠️",
         agentName: "Merchant",
-        description: `Failed to SMS ${venueName} — auto-accepting.`,
-        status: "success"
+        description: `Failed to SMS ${venueName} — manual follow-up required.`,
+        status: "fallback"
       });
-      return { offerType: "accept", text: "Auto-accepted (SMS send failed)", details: {}, autoAccepted: true };
+      return {
+        offerType: "no_response",
+        text: "Manual follow-up required (merchant SMS failed)",
+        details: { note: "Merchant SMS delivery failed" }
+      };
     }
 
     this.addSms({
@@ -453,13 +677,18 @@ export class MissionOrchestrator {
     });
 
     return new Promise((resolve, reject) => {
+      if (signal.aborted) {
+        reject(createAbortError());
+        return;
+      }
+
       const cleanup = () => {
         if (this.pendingMerchantTimer) {
           clearTimeout(this.pendingMerchantTimer);
           this.pendingMerchantTimer = null;
         }
         this.pendingMerchantResolver = null;
-        this.pendingMerchantVenue = null;
+        this.pendingMerchantTarget = null;
         signal.removeEventListener("abort", onAbort);
       };
 
@@ -474,7 +703,10 @@ export class MissionOrchestrator {
       };
 
       this.pendingMerchantResolver = finish;
-      this.pendingMerchantVenue = venueName;
+      this.pendingMerchantTarget = {
+        venueName,
+        venuePhone: normalizePhoneValue(venuePhone)
+      };
       signal.addEventListener("abort", onAbort, { once: true });
 
       this.pendingMerchantTimer = setTimeout(() => {
@@ -484,14 +716,13 @@ export class MissionOrchestrator {
           agentId: "negotiation",
           agentEmoji: "⏱️",
           agentName: "Merchant",
-          description: `${venueName} did not respond — auto-accepting.`,
-          status: "success"
+          description: `${venueName} did not respond — manual follow-up required.`,
+          status: "fallback"
         });
         finish({
-          offerType: "accept",
-          text: "Auto-accepted after timeout",
-          details: {},
-          autoAccepted: true
+          offerType: "no_response",
+          text: "No merchant reply received",
+          details: { note: "Merchant SMS timed out" }
         });
       }, this.config.merchantResponseTimeoutMs ?? 30000);
     });
@@ -504,6 +735,12 @@ export class MissionOrchestrator {
     }
 
     return new Promise((resolve, reject) => {
+      if (signal.aborted) {
+        this.setPendingApproval(null);
+        reject(createAbortError());
+        return;
+      }
+
       const cleanup = () => {
         if (this.pendingApprovalTimer) {
           clearTimeout(this.pendingApprovalTimer);
@@ -521,6 +758,7 @@ export class MissionOrchestrator {
 
       const onAbort = () => {
         cleanup();
+        this.setPendingApproval(null);
         reject(createAbortError());
       };
 
@@ -606,18 +844,22 @@ export class MissionOrchestrator {
         description: "User asked to modify the pending booking by SMS.",
         status: "pending"
       });
-      await this.interruptMission({
-        command: "modify",
-        details: {
-          approvalRequestId: this.state.pendingApproval.id,
-          note: "User requested changes by SMS",
-          via: "sms"
-        }
-      });
+      try {
+        await this.interruptMission({
+          command: "modify",
+          details: {
+            approvalRequestId: this.state.pendingApproval.id,
+            note: "User requested changes by SMS",
+            via: "sms"
+          }
+        });
+      } catch (err) {
+        console.warn("Interrupt from inbound SMS failed, ignoring.", err);
+      }
       return;
     }
 
-    if (message.command === "CONFIRM") {
+    if (this.state.pendingItineraryConfirmation && message.command === "CONFIRM") {
       this.addTimelineEntry({
         id: this.nextId("timeline"),
         timestamp: nowLabel(),
@@ -627,9 +869,11 @@ export class MissionOrchestrator {
         description: "User confirmed the itinerary by SMS.",
         status: "success"
       });
+      this.setPendingItineraryConfirmation(null);
+      return;
     }
 
-    if (message.command === "MODIFY") {
+    if (this.state.pendingItineraryConfirmation && message.command === "MODIFY") {
       this.addTimelineEntry({
         id: this.nextId("timeline"),
         timestamp: nowLabel(),
@@ -639,6 +883,40 @@ export class MissionOrchestrator {
         description: "User requested itinerary modifications by SMS.",
         status: "pending"
       });
+      this.setPendingItineraryConfirmation(null);
+      try {
+        await this.interruptMission({
+          command: "itinerary_modify",
+          details: {
+            note: "User requested changes to the final itinerary by SMS",
+            via: "sms"
+          }
+        });
+      } catch (err) {
+        console.warn("Interrupt from inbound SMS failed, ignoring.", err);
+      }
+      return;
+    }
+
+    if (message.command === "CONFIRM" || message.command === "MODIFY") {
+      this.addTimelineEntry({
+        id: this.nextId("timeline"),
+        timestamp: nowLabel(),
+        agentId: "planner",
+        agentEmoji: "⚠️",
+        agentName: "System",
+        description: `Ignored stale ${message.command} reply because no matching pending step was active.`,
+        status: "fallback"
+      });
+      return;
+    }
+  }
+
+  async safeSendUserSms(text) {
+    try {
+      await this.sendUserSms(text);
+    } catch (err) {
+      console.warn("User SMS send failed, continuing mission.", err);
     }
   }
 
@@ -695,6 +973,7 @@ export class MissionOrchestrator {
     await this.waitStep(signal, 1);
 
     const plannerResult = await runPlannerAgent({ missionText, llm: this.llm });
+    this.ensureActiveRun(signal);
     this.updateAgent("planner", {
       status: "speaking",
       currentTask: "Broadcasting plan",
@@ -711,7 +990,15 @@ export class MissionOrchestrator {
       reasoning: plannerResult.reasoning,
       confidence: plannerResult.confidence,
       alternatives: ["Keep the mission manual", "Research only and stop before bookings"],
-      sources: [{ label: "Mission Input", type: "web", freshness: "live", verified: true }],
+      sources: [{
+        label: "Mission Input",
+        type: "web",
+        freshness: "live",
+        verified: true,
+        bookingPath: "unknown",
+        risk: "low",
+        checkedAt: nowLabel()
+      }],
       timestamp: nowLabel()
     });
     await this.waitStep(signal, 1);
@@ -746,6 +1033,7 @@ export class MissionOrchestrator {
     await this.waitStep(signal, 1);
 
     const researchResult = await runResearchAgent({ missionText, llm: this.llm });
+    this.ensureActiveRun(signal);
     if (researchResult.usedFallback) {
       this.addAdaptation({
         id: this.nextId("adaptation"),
@@ -755,6 +1043,7 @@ export class MissionOrchestrator {
       });
       this.addSkill({
         id: this.nextId("skill"),
+        skillKey: buildSkillKey("Seeded venue fallback"),
         title: "Seeded venue fallback",
         description: "Use deterministic venue fixtures whenever live lookup is unavailable.",
         source: "Research fallback",
@@ -782,13 +1071,65 @@ export class MissionOrchestrator {
       sources: researchResult.sources,
       timestamp: nowLabel()
     });
+    this.addReasoning({
+      id: this.nextId("reasoning"),
+      agentId: "research",
+      agentEmoji: "🍝",
+      agentName: "Restaurant Provenance",
+      decision: `Restaurant recommendation: ${researchResult.restaurant.name}`,
+      reasoning: `Recommended ${researchResult.restaurant.name} for ${researchResult.restaurant.reservationTime} based on cuisine fit, proximity, and booking path confidence.`,
+      confidence: researchResult.confidence,
+      alternatives: ["Choose a lower-rated but cheaper venue"],
+      sources: researchResult.recommendationSources?.restaurant ?? researchResult.sources,
+      timestamp: nowLabel()
+    });
+    this.addReasoning({
+      id: this.nextId("reasoning"),
+      agentId: "research",
+      agentEmoji: "🎬",
+      agentName: "Cinema Provenance",
+      decision: `Cinema recommendation: ${researchResult.cinema.name}`,
+      reasoning: `Recommended ${researchResult.cinema.name} for ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime} based on itinerary fit and source freshness.`,
+      confidence: researchResult.confidence,
+      alternatives: ["Choose a later show with cheaper seats"],
+      sources: researchResult.recommendationSources?.cinema ?? researchResult.sources,
+      timestamp: nowLabel()
+    });
+    this.addRecommendationInsight({
+      id: this.nextId("recommendation"),
+      workflow: "restaurant",
+      venueName: researchResult.restaurant.name,
+      summary: summarizeRecommendation("restaurant", researchResult.restaurant.name, {
+        time: researchResult.restaurant.reservationTime
+      }),
+      confidence: researchResult.confidence,
+      sources: researchResult.recommendationSources?.restaurant ?? researchResult.sources,
+      primaryBookingPath: researchResult.recommendationSources?.restaurant?.[0]?.bookingPath ?? "unknown",
+      primaryRisk: researchResult.recommendationSources?.restaurant?.[0]?.risk ?? "medium",
+      fallbackMode: researchResult.usedFallback
+    });
+    this.addRecommendationInsight({
+      id: this.nextId("recommendation"),
+      workflow: "cinema",
+      venueName: researchResult.cinema.name,
+      summary: summarizeRecommendation("cinema", researchResult.cinema.name, {
+        time: researchResult.cinema.showtime,
+        title: researchResult.cinema.movieTitle
+      }),
+      confidence: researchResult.confidence,
+      sources: researchResult.recommendationSources?.cinema ?? researchResult.sources,
+      primaryBookingPath: researchResult.recommendationSources?.cinema?.[0]?.bookingPath ?? "unknown",
+      primaryRisk: researchResult.recommendationSources?.cinema?.[0]?.risk ?? "medium",
+      fallbackMode: researchResult.usedFallback
+    });
     this.addMemory({
       id: this.nextId("memory"),
       agentId: "research",
       type: "context",
       label: "Research shortlist",
       value: `${researchResult.restaurant.name} at ${researchResult.restaurant.reservationTime}; ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}`,
-      timestamp: nowLabel()
+      timestamp: nowLabel(),
+      scope: "mission:recommendations"
     });
     await this.waitStep(signal, 1);
 
@@ -812,10 +1153,18 @@ export class MissionOrchestrator {
         reasoning: "The user selected recommendation-only autonomy, so the system should surface the strongest plan without contacting any venue.",
         confidence: 94,
         alternatives: ["Place the calls and ask for approval", "Auto-book within constraints"],
-        sources: [{ label: "Autonomy Config", type: "cache", freshness: "live", verified: true }],
+        sources: [{
+          label: "Autonomy Config",
+          type: "cache",
+          freshness: "live",
+          verified: true,
+          bookingPath: "unknown",
+          risk: "low",
+          checkedAt: nowLabel()
+        }],
         timestamp: nowLabel()
       });
-      this.setSummary({
+      this.publishSummary({
         visible: true,
         result: `Recommended ${researchResult.restaurant.name} for ${researchResult.restaurant.reservationTime} and ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}. No calls were placed because Suggest Only mode was active.`,
         costBreakdown: [
@@ -842,6 +1191,7 @@ export class MissionOrchestrator {
     const dinnerBooked = await this.handleCallSequence({
       signal,
       mode,
+      workflow: "restaurant",
       targetName: researchResult.restaurant.name,
       targetPhone: researchResult.restaurant.phone,
       reservationLine: `Hi, I need a dinner reservation for two at ${researchResult.restaurant.reservationTime}.`,
@@ -861,7 +1211,7 @@ export class MissionOrchestrator {
     });
 
     if (!dinnerBooked) {
-      this.setSummary({
+      this.publishSummary({
         visible: true,
         result: `Recommendation ready, but the dinner booking was not finalized. ${researchResult.restaurant.name} at ${researchResult.restaurant.reservationTime} remains the best option for manual follow-up.`,
         costBreakdown: [
@@ -874,11 +1224,12 @@ export class MissionOrchestrator {
       return;
     }
 
-    await this.sendUserSms(`Booked dinner at ${researchResult.restaurant.name} for ${researchResult.restaurant.reservationTime}. Calling the cinema next.`);
+    await this.safeSendUserSms(`Booked dinner at ${researchResult.restaurant.name} for ${researchResult.restaurant.reservationTime}. Calling the cinema next.`);
 
     const movieBooked = await this.handleCallSequence({
       signal,
       mode,
+      workflow: "cinema",
       targetName: researchResult.cinema.name,
       targetPhone: researchResult.cinema.phone,
       reservationLine: `Hello, I want two ${researchResult.cinema.seatType} seats for ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}.`,
@@ -898,7 +1249,7 @@ export class MissionOrchestrator {
     });
 
     if (!movieBooked) {
-      this.setSummary({
+      this.publishSummary({
         visible: true,
         result: `Dinner is secured at ${researchResult.restaurant.name}, but the movie booking still needs confirmation. ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime} remains the recommended show.`,
         costBreakdown: [
@@ -940,6 +1291,7 @@ export class MissionOrchestrator {
     await this.waitStep(signal, 1);
 
     const negotiationResult = await runNegotiatorAgent({ researchResult, llm: this.llm });
+    this.ensureActiveRun(signal);
     this.updateAgent("negotiation", {
       status: "speaking",
       liveText: negotiationResult.liveText,
@@ -955,7 +1307,15 @@ export class MissionOrchestrator {
       reasoning: negotiationResult.reasoning,
       confidence: negotiationResult.confidence,
       alternatives: ["Keep full-price booking", "Move to a cheaper but worse-timed show"],
-      sources: [{ label: "Discount DB", type: "cache", freshness: "cached", verified: false }],
+      sources: [{
+        label: "Discount DB",
+        type: "cache",
+        freshness: "cached",
+        verified: false,
+        bookingPath: "unknown",
+        risk: "medium",
+        checkedAt: nowLabel()
+      }],
       timestamp: nowLabel()
     });
     await this.waitStep(signal, 1);
@@ -994,6 +1354,7 @@ export class MissionOrchestrator {
       negotiationResult,
       llm: this.llm
     });
+    this.ensureActiveRun(signal);
     this.updateAgent("scheduler", {
       status: "speaking",
       liveText: schedulerResult.liveText,
@@ -1009,10 +1370,18 @@ export class MissionOrchestrator {
       reasoning: "The dinner ends with a comfortable travel buffer before the selected showtime, preserving seat quality and discount coverage.",
       confidence: schedulerResult.confidence,
       alternatives: ["Later dinner and later show", "Movie first, dinner second"],
-      sources: [{ label: "Itinerary Engine", type: "api", freshness: "live", verified: true }],
+      sources: [{
+        label: "Itinerary Engine",
+        type: "api",
+        freshness: "live",
+        verified: true,
+        bookingPath: "unknown",
+        risk: "low",
+        checkedAt: nowLabel()
+      }],
       timestamp: nowLabel()
     });
-    this.setSummary(schedulerResult.summary);
+    this.publishSummary(schedulerResult.summary);
     this.addTimelineEntry({
       id: this.nextId("timeline"),
       timestamp: nowLabel(),
@@ -1022,7 +1391,11 @@ export class MissionOrchestrator {
       description: "Mission completed successfully.",
       status: "success"
     });
-    await this.sendUserSms(`Mission complete. Dinner at ${researchResult.restaurant.name} ${researchResult.restaurant.reservationTime}, then ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}. Reply CONFIRM or MODIFY.`);
+    await this.safeSendUserSms(`Mission complete. Dinner at ${researchResult.restaurant.name} ${researchResult.restaurant.reservationTime}, then ${researchResult.cinema.movieTitle} at ${researchResult.cinema.showtime}. Reply CONFIRM or MODIFY.`);
+    this.setPendingItineraryConfirmation({
+      id: this.nextId("itinerary-confirmation"),
+      kind: "itinerary_confirmation"
+    });
 
     this.addAdaptation({
       id: this.nextId("adaptation"),
@@ -1040,6 +1413,7 @@ export class MissionOrchestrator {
   async handleCallSequence({
     signal,
     mode,
+    workflow,
     targetName,
     targetPhone,
     reservationLine,
@@ -1075,7 +1449,10 @@ export class MissionOrchestrator {
       receiver: targetName,
       duration: 0,
       transcript: [],
-      status: "ringing"
+      status: "ringing",
+      providerMode: mode === "simulation" ? "simulation" : "live",
+      transcriptMode: "none",
+      handoffLabel: null
     });
     await this.waitStep(signal, 1);
 
@@ -1088,6 +1465,9 @@ export class MissionOrchestrator {
       resemble: this.resembleClient,
       missionVoiceName: this.config.missionVoiceName
     });
+    this.ensureActiveRun(signal);
+    const providerMode = mode === "simulation" ? "simulation" : callResult.provider === "clawdtalk" ? "live" : "fallback";
+    const transcriptMode = providerMode === "live" && Array.isArray(callResult.raw?.transcript) ? "live" : callResult.transcript.length > 0 ? "simulated" : "none";
 
     this.setCall({
       active: true,
@@ -1095,7 +1475,10 @@ export class MissionOrchestrator {
       receiver: targetName,
       duration: 3,
       transcript: [],
-      status: "connected"
+      status: "connected",
+      providerMode,
+      transcriptMode,
+      handoffLabel: null
     });
     this.updateAgent("call", {
       status: "speaking",
@@ -1113,7 +1496,9 @@ export class MissionOrchestrator {
         caller: "Call Agent",
         receiver: targetName,
         duration: 4 + index,
-        status: "connected"
+        status: "connected",
+        providerMode,
+        transcriptMode
       });
     }
 
@@ -1122,8 +1507,11 @@ export class MissionOrchestrator {
       caller: "Call Agent",
       receiver: targetName,
       duration: callResult.transcript.length + 4,
-      transcript: [],
-      status: "ended"
+      transcript: this.state.call.transcript,
+      status: "ended",
+      providerMode,
+      transcriptMode,
+      handoffLabel: "Negotiation moved to merchant SMS thread"
     });
 
     // --- Merchant response flow ---
@@ -1140,15 +1528,23 @@ export class MissionOrchestrator {
     const merchantResponse = await this.awaitMerchantResponse({
       signal, mode, venueName: targetName, venuePhone: targetPhone, merchantSmsText
     });
+    this.ensureActiveRun(signal);
 
     const merchantOffer = {
       id: this.nextId("merchant-offer"),
+      workflow,
+      requestLabel: workflow === "restaurant" ? "Dinner booking request" : "Cinema booking request",
       venueName: targetName,
       offerType: merchantResponse.offerType,
+      merchantOutcome: merchantResponse.offerType,
       originalRequest: reservationLine,
       merchantResponse: merchantResponse.text,
       details: merchantResponse.details || {},
       status: "pending",
+      negotiatorDecision: merchantResponse.offerType === "accept" ? "accept" : merchantResponse.offerType === "no_response" ? "defer" : null,
+      decision: merchantResponse.offerType === "accept" ? "accept" : merchantResponse.offerType === "no_response" ? "defer" : undefined,
+      finalResolution: "pending",
+      finalized: false,
       timestamp: nowLabel()
     };
     this.addMerchantOffer(merchantOffer);
@@ -1160,12 +1556,19 @@ export class MissionOrchestrator {
       agentEmoji: "🏪",
       agentName: "Merchant",
       description: `${targetName} responded: ${merchantResponse.text}`,
-      status: merchantResponse.offerType === "accept" ? "success" : "pending"
+      status: merchantResponse.offerType === "accept" ? "success" : merchantResponse.offerType === "no_response" ? "fallback" : "pending"
     });
 
     let shouldFinalizeBooking = true;
+    let finalDecision = merchantOffer.decision ?? null;
+    let finalResolution = merchantOffer.finalResolution;
+    let rejectedByUser = false;
 
-    if (merchantResponse.offerType !== "accept") {
+    if (merchantResponse.offerType === "no_response") {
+      shouldFinalizeBooking = false;
+      finalDecision = "defer";
+      finalResolution = "manual_followup";
+    } else if (merchantResponse.offerType !== "accept") {
       this.updateAgent("negotiation", {
         status: "thinking",
         listeningTo: null,
@@ -1180,6 +1583,7 @@ export class MissionOrchestrator {
         llm: this.llm,
         merchantOffer
       });
+      this.ensureActiveRun(signal);
 
       this.updateAgent("negotiation", {
         status: "speaking",
@@ -1196,23 +1600,71 @@ export class MissionOrchestrator {
         reasoning: negotiationResult.reasoning,
         confidence: negotiationResult.confidence,
         alternatives: ["Accept original terms", "Reject and try another venue"],
-        sources: [{ label: "Merchant SMS", type: "sms", freshness: "live", verified: true }],
+        sources: [{
+          label: "Merchant SMS",
+          type: "sms",
+          freshness: "live",
+          verified: true,
+          bookingPath: "direct",
+          risk: merchantResponse.offerType === "counter" ? "medium" : "low",
+          checkedAt: nowLabel()
+        }],
         timestamp: nowLabel()
       });
 
-      this.updateMerchantOffer(merchantOffer.id, { status: negotiationResult.action === "accept" ? "accepted" : negotiationResult.action === "reject" ? "rejected" : "countered" });
+      finalDecision = negotiationResult.action === "counter" ? "counter" : negotiationResult.action;
+      this.updateMerchantOffer(merchantOffer.id, {
+        status: negotiationResult.action === "accept" ? "accepted" : negotiationResult.action === "reject" ? "rejected" : "countered",
+        negotiatorDecision: finalDecision,
+        decision: finalDecision,
+        finalized: negotiationResult.action === "accept",
+        finalResolution: negotiationResult.action === "accept" ? "pending" : negotiationResult.action === "reject" ? "abandoned" : "manual_followup"
+      });
 
-      if (negotiationResult.action === "reject") {
+      if (negotiationResult.action === "reject" || negotiationResult.action === "counter") {
         shouldFinalizeBooking = false;
+        finalResolution = negotiationResult.action === "reject" ? "abandoned" : "manual_followup";
+      }
+
+      if (negotiationResult.action === "counter") {
+        const venueScope = buildVenueScope(targetName, targetPhone);
+        this.addMemory({
+          id: this.nextId("memory"),
+          agentId: "negotiation",
+          type: "context",
+          label: `${targetName} negotiation pattern`,
+          value: "This venue countered without a strong incentive. Ask for an adjacent time plus a benefit before switching.",
+          timestamp: nowLabel(),
+          scope: venueScope
+        });
+        this.upsertSkill({
+          id: this.nextId("skill"),
+          title: "Counter-offer escalation",
+          description: "When a venue counters without a meaningful incentive, ask for the nearest adjacent time plus a perk before walking away.",
+          source: `${targetName} countered without a strong incentive`,
+          version: 1,
+          usageCount: 1,
+          createdAt: nowLabel(),
+          agentId: "negotiation",
+          scope: venueScope,
+          improvementLabel: "Avoid dead-end counter-offers"
+        });
       }
 
       await this.waitStep(signal, 0.5);
       this.updateAgent("negotiation", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
     } else {
-      this.updateMerchantOffer(merchantOffer.id, { status: "accepted" });
+      this.updateMerchantOffer(merchantOffer.id, {
+        status: "accepted",
+        negotiatorDecision: "accept",
+        decision: "accept",
+        finalized: false,
+        finalResolution: "pending"
+      });
     }
 
     if (this.state.autonomyMode === "confirm") {
+      this.autonomyRecap.requiredManualConfirmation = true;
       this.addTimelineEntry({
         id: this.nextId("timeline"),
         timestamp: nowLabel(),
@@ -1229,7 +1681,12 @@ export class MissionOrchestrator {
           id: this.nextId("approval"),
           agentId: "call",
           action: bookingAction,
-          details: bookingDetails
+          details: {
+            ...bookingDetails,
+            workflow,
+            actionLabel: workflow === "restaurant" ? "Confirm restaurant booking" : "Confirm cinema booking",
+            pauseReason: "Approval is required before the final booking step."
+          }
         },
         smsText: `Approval needed: finalize ${targetName} at ${bookingDetails.time}? Reply CONFIRM or MODIFY.`,
         autoApproveInSimulation: true
@@ -1237,11 +1694,17 @@ export class MissionOrchestrator {
 
       if (approvalDecision.command === "modify") {
         this.ensureActiveRun(signal);
+        this.updateMerchantOffer(merchantOffer.id, {
+          finalized: false,
+          finalResolution: "manual_followup"
+        });
         return false;
       }
 
       if (approvalDecision.command === "reject") {
         shouldFinalizeBooking = false;
+        rejectedByUser = true;
+        finalResolution = "rejected_by_user";
       } else if (approvalDecision.details?.autoApproved) {
         this.addTimelineEntry({
           id: this.nextId("timeline"),
@@ -1271,6 +1734,8 @@ export class MissionOrchestrator {
           status: "success"
         });
       } else {
+        this.autonomyRecap.requiredManualConfirmation = true;
+        this.autonomyRecap.constraintTriggered = true;
         this.addTimelineEntry({
           id: this.nextId("timeline"),
           timestamp: nowLabel(),
@@ -1288,7 +1753,12 @@ export class MissionOrchestrator {
             id: this.nextId("approval"),
             agentId: "call",
             action: bookingAction,
-            details: bookingDetails
+            details: {
+              ...bookingDetails,
+              workflow,
+              actionLabel: workflow === "restaurant" ? "Approve restaurant booking" : "Approve cinema booking",
+              pauseReason: `Paused because ${gate.reasons.join(", ")}.`
+            }
           },
           smsText: `Constraint check paused ${targetName}. Confirm ${bookingDetails.time} manually by SMS or dashboard.`,
           autoApproveInSimulation: true
@@ -1296,11 +1766,17 @@ export class MissionOrchestrator {
 
         if (approvalDecision.command === "modify") {
           this.ensureActiveRun(signal);
+          this.updateMerchantOffer(merchantOffer.id, {
+            finalized: false,
+            finalResolution: "manual_followup"
+          });
           return false;
         }
 
         if (approvalDecision.command === "reject") {
           shouldFinalizeBooking = false;
+          rejectedByUser = true;
+          finalResolution = "rejected_by_user";
         }
       }
     }
@@ -1314,7 +1790,27 @@ export class MissionOrchestrator {
       });
       this.updateTimelineEntry(timelineId, {
         status: "fallback",
-        description: `Booking skipped for ${targetName} after user rejection.`
+        description: merchantResponse.offerType === "no_response"
+          ? `Booking paused for ${targetName} because the merchant did not confirm the request.`
+          : merchantResponse.offerType !== "accept"
+          ? `Booking paused for ${targetName} after a merchant counter-offer required follow-up.`
+          : `Booking skipped for ${targetName} after user rejection.`
+      });
+      this.updateMerchantOffer(merchantOffer.id, {
+        finalized: false,
+        finalResolution:
+          finalResolution ??
+          (rejectedByUser
+            ? "rejected_by_user"
+            : merchantResponse.offerType === "no_response"
+              ? "manual_followup"
+              : finalDecision === "reject"
+                ? "abandoned"
+                : "manual_followup"),
+        negotiatorDecision: finalDecision,
+        decision:
+          finalDecision ??
+          (merchantResponse.offerType === "no_response" ? "defer" : rejectedByUser ? "accept" : "defer")
       });
       this.addTimelineEntry({
         id: this.nextId("timeline"),
@@ -1322,7 +1818,11 @@ export class MissionOrchestrator {
         agentId: "planner",
         agentEmoji: "↪️",
         agentName: "Planner Agent",
-        description: `Skipped ${targetName} and returned control to the user.`,
+        description: merchantResponse.offerType === "no_response"
+          ? `No merchant confirmation was received from ${targetName}; manual follow-up is required.`
+          : merchantResponse.offerType !== "accept"
+          ? `Captured ${targetName}'s counter-offer and returned control for replanning.`
+          : `Skipped ${targetName} and returned control to the user.`,
         status: "fallback"
       });
       return false;
@@ -1334,6 +1834,12 @@ export class MissionOrchestrator {
       liveText: "",
       confidence: 0
     });
+    this.updateMerchantOffer(merchantOffer.id, {
+      finalized: true,
+      finalResolution: "booked",
+      negotiatorDecision: finalDecision ?? "accept",
+      decision: finalDecision ?? "accept"
+    });
     this.updateTimelineEntry(timelineId, { status: "success", description: successDescription });
     this.addMemory({
       id: this.nextId("memory"),
@@ -1341,7 +1847,8 @@ export class MissionOrchestrator {
       type: "decision",
       label: memoryLabel,
       value: memoryValue,
-      timestamp: nowLabel()
+      timestamp: nowLabel(),
+      scope: buildVenueScope(targetName, targetPhone)
     });
     return true;
   }
@@ -1371,34 +1878,34 @@ export class MissionOrchestrator {
     });
 
     const sender = message.from || "Merchant";
-    if (this.pendingMerchantResolver && (!this.pendingMerchantVenue || this.pendingMerchantVenue === sender)) {
+    const normalizedSenderPhone = normalizePhoneValue(sender);
+    const normalizedPendingPhone = this.pendingMerchantTarget?.venuePhone || "";
+    const pendingVenueName = this.pendingMerchantTarget?.venueName || "";
+    const matchesPendingMerchant =
+      this.pendingMerchantResolver &&
+      (
+        !this.pendingMerchantTarget ||
+        (normalizedPendingPhone && normalizedSenderPhone === normalizedPendingPhone) ||
+        (!normalizedPendingPhone && pendingVenueName && pendingVenueName.toLowerCase() === sender.toLowerCase())
+      );
+    if (matchesPendingMerchant) {
       this.addTimelineEntry({
         id: this.nextId("timeline"),
         timestamp: nowLabel(),
         agentId: "negotiation",
         agentEmoji: "🏪",
         agentName: "Merchant",
-        description: `${this.pendingMerchantVenue || sender} replied: ${message.text}`,
+        description: `${pendingVenueName || sender} replied: ${message.text}`,
         status: parsed.offerType === "accept" ? "success" : "pending"
       });
       this.resolvePendingMerchant(parsed);
       return;
     }
-
-    const offer = {
-      id: this.nextId("merchant-offer"),
-      venueName: message.from || "Merchant",
-      offerType: parsed.offerType,
-      originalRequest: "Booking request",
-      merchantResponse: message.text,
-      details: parsed.details,
-      status: "pending",
-      timestamp: nowLabel()
-    };
-    this.addMerchantOffer(offer);
   }
 
   async runInterrupt({ command, mode, signal }) {
+    this.resetAllAgentsToIdle();
+
     this.addTimelineEntry({
       id: this.nextId("timeline"),
       timestamp: nowLabel(),
@@ -1425,7 +1932,15 @@ export class MissionOrchestrator {
       reasoning: "The user override takes precedence over the prior optimization path, so the fastest safe response is to re-plan the remaining booking steps.",
       confidence: 87,
       alternatives: ["Ignore the change request", "Queue it after the current booking"],
-      sources: [{ label: "User Override", type: "web", freshness: "live", verified: true }],
+      sources: [{
+        label: "User Override",
+        type: "web",
+        freshness: "live",
+        verified: true,
+        bookingPath: "unknown",
+        risk: "low",
+        checkedAt: nowLabel()
+      }],
       timestamp: nowLabel()
     });
     this.addAdaptation({
@@ -1443,7 +1958,7 @@ export class MissionOrchestrator {
     await this.waitStep(signal, 1);
 
     this.updateAgent("planner", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
-    await this.sendUserSms(`Plan updated. Your request "${command}" has been folded into the live mission.`);
+    await this.safeSendUserSms(`Plan updated. Your request "${command}" has been folded into the live mission.`);
     this.setMissionStatus("completed", mode);
   }
 }
