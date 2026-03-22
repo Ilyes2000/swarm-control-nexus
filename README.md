@@ -1,6 +1,9 @@
 # 🦀 ClawSwarm Nexus
 <img width="3016" height="1704" alt="image" src="https://github.com/user-attachments/assets/b6499dcc-df3d-44a7-914c-6efbbcb2d9d7" />
 
+## Shadow Mission
+<img width="2992" height="1716" alt="image" src="https://github.com/user-attachments/assets/1bebb9a9-30c0-4f8b-b040-19ec8190ef26" />
+
 ClawSwarm Nexus is a real-time multi-agent concierge that can plan, negotiate, call, and confirm an outing for you while you watch every decision happen live.
 
 Instead of showing a single chatbot response, ClawSwarm exposes the entire mission layer:
