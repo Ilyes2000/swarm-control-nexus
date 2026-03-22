@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Mic, ShieldCheck, Wand2, Zap, Radio, Volume2, VolumeX, SendHorizonal } from "lucide-react";
+import { ChevronDown, Mic, ShieldCheck, Wand2, Zap, Radio, Volume2, VolumeX, SendHorizonal, GitBranch, Loader2, CheckCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -11,7 +11,11 @@ import { setVolume } from "@/lib/audio";
 import { CrabLogo } from "./CrabLogo";
 import { AdaptationIndicator } from "./AdaptationIndicator";
 
-export function Header() {
+interface HeaderProps {
+  onShadowAnalysis?: () => void;
+}
+
+export function Header({ onShadowAnalysis }: HeaderProps) {
   const {
     missionStatus,
     demoMode,
@@ -22,12 +26,13 @@ export function Header() {
     pendingApproval,
     recommendationInsights,
     summary,
+    shadowStatus,
     setUserInput,
     setDemoMode,
     setAutonomyMode,
     setAutonomyConstraints,
   } = useMission();
-  const { startMission, interruptMission, connectionState } = useMissionRuntime();
+  const { startMission, interruptMission, connectionState, startShadowMission } = useMissionRuntime();
   const [vol, setVol] = useState(70);
   const [interruptInput, setInterruptInput] = useState("");
   const [showInterruptFlash, setShowInterruptFlash] = useState(false);
@@ -76,6 +81,19 @@ export function Header() {
     }
 
     void startMission(userInput, demoMode ? "simulation" : "live", autonomyMode, autonomyConstraints);
+  };
+
+  const [shadowLoading, setShadowLoading] = useState(false);
+
+  const handleShadowAnalysis = async () => {
+    if (!userInput.trim() || missionStatus === "live" || shadowLoading) return;
+    setShadowLoading(true);
+    try {
+      await startShadowMission(userInput, demoMode ? "simulation" : "live");
+      onShadowAnalysis?.();
+    } finally {
+      setShadowLoading(false);
+    }
   };
 
   const isLive = missionStatus === "live";
@@ -235,6 +253,26 @@ export function Header() {
       >
         <Zap className="w-4 h-4" />
         {startLabel}
+      </Button>
+
+      <Button
+        variant="outline"
+        className={`shrink-0 font-mono text-xs font-semibold border-border/60 transition-colors ${
+          shadowStatus === "ready"
+            ? "border-green-500/40 text-green-400 bg-green-500/5 hover:bg-green-500/10"
+            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+        }`}
+        disabled={isLive || !userInput.trim() || shadowLoading}
+        onClick={() => void handleShadowAnalysis()}
+      >
+        {shadowLoading ? (
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        ) : shadowStatus === "ready" ? (
+          <CheckCheck className="w-3.5 h-3.5" />
+        ) : (
+          <GitBranch className="w-3.5 h-3.5" />
+        )}
+        {shadowStatus === "ready" ? "Analysis Ready ✓" : "Shadow Analysis"}
       </Button>
 
       <div className="flex items-center gap-1 shrink-0 rounded-full border border-border/60 bg-muted/30 p-1">

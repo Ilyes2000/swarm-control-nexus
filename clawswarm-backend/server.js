@@ -4,6 +4,16 @@ import { loadConfig } from "./config.js";
 import { createMissionWebSocketHub } from "./websocket.js";
 import { MissionOrchestrator } from "./orchestrator.js";
 import { createTelnyxSmsClient } from "./integrations/telnyx-sms.js";
+import { getAllVenueMemories, getVenueIntelligenceReport, updateVenueMemory } from "./venue-memory.js";
+import {
+  getGenomeStats,
+  getSkillLibrary,
+  getMissionHistory,
+  generateReplayDiff,
+  checkOpportunisticTraining,
+  runOpportunisticConsolidation,
+  seedDemoData as seedGenomeDemoData,
+} from "./skill-genome.js";
 
 const config = loadConfig();
 const app = express();
@@ -72,6 +82,126 @@ app.post("/api/mission/reset", (_req, res) => {
   res.status(202).json({ ok: true });
 });
 
+app.post("/api/mission/shadow", async (req, res) => {
+  try {
+    const result = await orchestrator.startShadowMission({
+      missionText: req.body?.missionText,
+      mode: req.body?.mode === "simulation" ? "simulation" : "live"
+    });
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(400).json({
+      error: error instanceof Error ? error.message : "Shadow mission failed"
+    });
+  }
+});
+
+app.post("/api/mission/shadow/launch", async (req, res) => {
+  try {
+    const { pathId, missionText, mode, autonomyMode, autonomyConstraints } = req.body;
+
+    const shadowPath = orchestrator.state.shadowPaths?.find(p => p.id === pathId);
+    if (!shadowPath) {
+      return res.status(404).json({ error: "Shadow path not found" });
+    }
+
+    const result = await orchestrator.startMission({
+      missionText: missionText || shadowPath.researchResult?.restaurant?.name
+        ? `Plan a dinner at ${shadowPath.restaurant.name} and movie ${shadowPath.cinema.movie}`
+        : missionText,
+      mode: mode === "simulation" ? "simulation" : "live",
+      autonomyMode: autonomyMode || "autobook",
+      autonomyConstraints
+    });
+
+    res.status(202).json({ ...result, strategy: shadowPath.strategy });
+  } catch (error) {
+    res.status(400).json({
+      error: error instanceof Error ? error.message : "Failed to launch shadow path"
+    });
+  }
+});
+
+app.get("/api/venues/memory", (_req, res) => {
+  res.json({ venues: getAllVenueMemories() });
+});
+
+app.get("/api/venues/:name/intelligence", (req, res) => {
+  const report = getVenueIntelligenceReport(
+    decodeURIComponent(req.params.name)
+  );
+  res.json(report);
+});
+
+app.post("/api/venues/seed-demo", (_req, res) => {
+  const demoVenues = [
+    {
+      name: "La Bella Vita",
+      calls: [
+        { offerType: "counter", text: "8:00 PM works better", details: { time: "8:00 PM" } },
+        { offerType: "accept",  text: "Confirmed!",           details: {} },
+        { offerType: "promo",   text: "20% off with CLAW20",  details: { promoCode: "CLAW20", discount: "20%" } },
+      ]
+    },
+    {
+      name: "Grand Cinema",
+      calls: [
+        { offerType: "accept",  text: "Seats confirmed",          details: {} },
+        { offerType: "offpeak", text: "Quiet screening at 9:45",  details: { time: "9:45 PM" } },
+      ]
+    },
+    {
+      name: "Le Bernardin",
+      calls: [
+        { offerType: "no_response", text: "", details: {} },
+        { offerType: "accept",      text: "Bonsoir, bien sûr", details: {} },
+      ]
+    },
+  ];
+
+  for (const venue of demoVenues) {
+    for (const outcome of venue.calls) {
+      updateVenueMemory(venue.name, outcome);
+    }
+  }
+
+  res.json({ ok: true, seeded: demoVenues.map(v => v.name) });
+});
+
+// ─── Skill Genome routes ───────────────────────────────────────────────────────
+
+app.get("/api/genome/stats", (_req, res) => {
+  res.json(getGenomeStats());
+});
+
+app.get("/api/genome/skills", (_req, res) => {
+  res.json({ skills: getSkillLibrary() });
+});
+
+app.get("/api/genome/missions", (_req, res) => {
+  res.json({ missions: getMissionHistory() });
+});
+
+app.get("/api/genome/missions/:id/replay", (req, res) => {
+  const diff = generateReplayDiff(req.params.id);
+  if (!diff) return res.status(404).json({ error: "Mission not found" });
+  res.json(diff);
+});
+
+app.get("/api/genome/training", (_req, res) => {
+  res.json(checkOpportunisticTraining());
+});
+
+app.post("/api/genome/seed", (_req, res) => {
+  seedGenomeDemoData();
+  res.json({ ok: true, seeded: true, stats: getGenomeStats() });
+});
+
+app.post("/api/genome/train", async (_req, res) => {
+  runOpportunisticConsolidation((type, payload) => websocketHub.broadcast({ type, payload, ts: new Date().toISOString() })).catch(() => {});
+  res.json({ ok: true, status: "training" });
+});
+
 app.post("/api/webhooks/telnyx/sms", async (req, res) => {
   try {
     const parsed = telnyxSmsClient.parseInboundWebhook(req.body);
@@ -102,4 +232,5 @@ app.post("/api/webhooks/telnyx/merchant-sms", async (req, res) => {
 
 server.listen(config.port, () => {
   console.log(`ClawSwarm backend listening on http://127.0.0.1:${config.port}`);
+  seedGenomeDemoData(); // pre-warm demo skill genome
 });

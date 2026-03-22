@@ -10,9 +10,12 @@ import type {
   PendingItineraryConfirmation,
   RecommendationInsight,
   ReasoningEntry,
+  ShadowPath,
   Skill,
   SMSMessage,
   TimelineEntry,
+  VenueMemory,
+  VenueIntelligenceEvent,
 } from "@/contexts/MissionContext";
 
 export type MissionMode = "live" | "simulation";
@@ -40,6 +43,13 @@ export interface MissionEventActions {
   updateMerchantOffer: (id: string, updates: Partial<MerchantOffer>) => void;
   addRecommendationInsight: (insight: RecommendationInsight) => void;
   updateSkill: (skillKey: string, updates: Partial<Skill>) => void;
+  setShadowPaths: (paths: ShadowPath[]) => void;
+  setShadowStatus: (status: "idle" | "running" | "ready") => void;
+  upsertVenueMemory: (venueName: string, memory: VenueMemory) => void;
+  setActiveVenueIntelligence: (payload: VenueIntelligenceEvent | null) => void;
+  setGenomeGeneration: (generation: number) => void;
+  addGenomeSkills: (skills: Skill[]) => void;
+  setOmlsStatus: (status: string) => void;
 }
 
 export interface MissionEventMap {
@@ -66,6 +76,14 @@ export interface MissionEventMap {
   recommendation_insight: RecommendationInsight;
   skill_update: { skillKey: string; updates: Partial<Skill> };
   error: { message: string; detail?: string };
+  shadow_status: { status: "idle" | "running" | "ready" };
+  shadow_paths: { paths: ShadowPath[] };
+  venue_intelligence: VenueIntelligenceEvent;
+  venue_memory_updated: { venueName: string; memory: VenueMemory; newSkillLearned: string | null };
+  skill_genome_evolved: { generation: number; newSkills: Skill[]; totalSkills: number };
+  skill_generation_update: { generation: number; delta: number };
+  omls_training_complete: { status: string; generation: number; consolidated?: number; totalSkills?: number };
+  skills_injected: { skills: Skill[]; venueName: string };
 }
 
 export type MissionEvent = {
@@ -148,6 +166,34 @@ export function applyMissionEvent(event: MissionEvent, actions: MissionEventActi
       actions.addRecommendationInsight(event.payload);
       break;
     case "error":
+      break;
+    case "shadow_status":
+      actions.setShadowStatus(event.payload.status);
+      break;
+    case "shadow_paths":
+      actions.setShadowPaths(event.payload.paths);
+      break;
+    case "venue_intelligence":
+      actions.setActiveVenueIntelligence(event.payload);
+      break;
+    case "venue_memory_updated":
+      actions.upsertVenueMemory(event.payload.venueName, event.payload.memory);
+      break;
+    case "skill_genome_evolved":
+      actions.setGenomeGeneration(event.payload.generation);
+      actions.addGenomeSkills(event.payload.newSkills);
+      break;
+    case "skill_generation_update":
+      actions.setGenomeGeneration(event.payload.generation);
+      break;
+    case "omls_training_complete":
+      actions.setOmlsStatus(event.payload.status);
+      if (event.payload.totalSkills != null) {
+        // skills updated via genome evolved events; just track status
+      }
+      break;
+    case "skills_injected":
+      // Informational: skills already in library
       break;
     default:
       break;

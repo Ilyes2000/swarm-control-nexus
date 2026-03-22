@@ -43,6 +43,13 @@ export function useMissionRuntime() {
     setPendingItineraryConfirmation,
     hydrateMission,
     resetMission: resetLocalMission,
+    setShadowPaths,
+    setShadowStatus,
+    upsertVenueMemory,
+    setActiveVenueIntelligence,
+    setGenomeGeneration,
+    addGenomeSkills,
+    setOmlsStatus,
   } = useMission();
 
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
@@ -75,6 +82,13 @@ export function useMissionRuntime() {
       setUserInput,
       setPendingApproval,
       setPendingItineraryConfirmation,
+      setShadowPaths,
+      setShadowStatus,
+      upsertVenueMemory,
+      setActiveVenueIntelligence,
+      setGenomeGeneration,
+      addGenomeSkills,
+      setOmlsStatus,
     }),
     [
       addAdaptation,
@@ -99,6 +113,13 @@ export function useMissionRuntime() {
       updateAgent,
       updateMerchantOffer,
       updateTimelineEntry,
+      setShadowPaths,
+      setShadowStatus,
+      upsertVenueMemory,
+      setActiveVenueIntelligence,
+      setGenomeGeneration,
+      addGenomeSkills,
+      setOmlsStatus,
     ],
   );
 
@@ -298,6 +319,43 @@ export function useMissionRuntime() {
     resetLocalMission();
   }, [postJson, resetLocalMission]);
 
+  const startShadowMission = useCallback(
+    async (missionText: string, mode: MissionMode) => {
+      const trimmed = missionText.trim();
+      if (!trimmed) {
+        toast.error("Enter a mission before running shadow analysis.");
+        return;
+      }
+      try {
+        return await postJson("/api/mission/shadow", { missionText: trimmed, mode });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Shadow analysis failed.";
+        toast.error(message);
+        throw error;
+      }
+    },
+    [postJson],
+  );
+
+  const launchShadowPath = useCallback(
+    async (pathId: string, missionText: string, mode: MissionMode, autonomyMode: AutonomyMode, autonomyConstraints: AutonomyConstraints) => {
+      try {
+        return await postJson("/api/mission/shadow/launch", {
+          pathId,
+          missionText,
+          mode,
+          autonomyMode,
+          autonomyConstraints,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to launch shadow path.";
+        toast.error(message);
+        throw error;
+      }
+    },
+    [postJson],
+  );
+
   return {
     connectionState,
     lastError,
@@ -305,5 +363,7 @@ export function useMissionRuntime() {
     interruptMission,
     resetMission,
     connectMissionStream,
+    startShadowMission,
+    launchShadowPath,
   };
 }

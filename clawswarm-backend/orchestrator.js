@@ -9,6 +9,13 @@ import { runResearchAgent } from "./agents/research.js";
 import { runCallerAgent } from "./agents/caller.js";
 import { runNegotiatorAgent } from "./agents/negotiator.js";
 import { runSchedulerAgent } from "./agents/scheduler.js";
+import { updateVenueMemory } from "./venue-memory.js";
+import {
+  recordActivity,
+  retrieveRelevantSkills,
+  recordMission,
+  evolveSkillsFromFailures,
+} from "./skill-genome.js";
 
 function createAbortError() {
   return new Error("Mission run aborted");
@@ -424,6 +431,7 @@ export class MissionOrchestrator {
     this.state.userInput = missionText.trim();
     this.state.demoMode = mode === "simulation";
     this.state.autonomyMode = ["suggest", "confirm", "autobook"].includes(autonomyMode) ? autonomyMode : "autobook";
+    recordActivity(String(this.currentRunId), { type: "mission_start", missionText: missionText.trim(), mode });
     this.state.autonomyConstraints = normalizeAutonomyConstraints(autonomyConstraints);
     this.state.pendingApproval = null;
     this.broadcastSnapshot();
@@ -1411,6 +1419,14 @@ export class MissionOrchestrator {
     await this.waitStep(signal, 0.5);
     this.setTrainingMode(false);
     this.updateAgent("scheduler", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
+
+    // Record mission and evolve skills from failures (MetaClaw genome)
+    const missionRecord = recordMission(this.state, {
+      successCount: this.state.merchantOffers.filter(o => o.finalResolution === "booked").length,
+      totalCalls: this.state.merchantOffers.length,
+    });
+    evolveSkillsFromFailures(missionRecord, this.broadcast.bind(this)).catch(() => {});
+
     this.setMissionStatus("completed", mode);
   }
 
@@ -1460,6 +1476,13 @@ export class MissionOrchestrator {
     });
     await this.waitStep(signal, 1);
 
+    // Inject relevant skills from genome before the call
+    const venueKey = targetName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const injectedSkills = retrieveRelevantSkills({ venueKey, agentId: "call", category: "negotiation" });
+    if (injectedSkills.length > 0) {
+      this.broadcast("skills_injected", { skills: injectedSkills, venueName: targetName });
+    }
+
     const callResult = await runCallerAgent({
       businessName: targetName,
       businessPhone: targetPhone,
@@ -1470,6 +1493,17 @@ export class MissionOrchestrator {
       missionVoiceName: this.config.missionVoiceName
     });
     this.ensureActiveRun(signal);
+
+    // Broadcast venue intelligence to dashboard
+    if (callResult.venueIntelligence) {
+      this.broadcast("venue_intelligence", {
+        venueName:         targetName,
+        intelligence:      callResult.venueIntelligence,
+        adaptedTone:       callResult.toneUsed,
+        adaptedLanguage:   callResult.languageUsed,
+        relationshipLevel: callResult.relationshipLevel,
+      });
+    }
     const providerMode = mode === "simulation" ? "simulation" : callResult.provider === "clawdtalk" ? "live" : "fallback";
     const transcriptMode = providerMode === "live" && Array.isArray(callResult.raw?.transcript) ? "live" : callResult.transcript.length > 0 ? "simulated" : "none";
 
@@ -1533,6 +1567,30 @@ export class MissionOrchestrator {
       signal, mode, venueName: targetName, venuePhone: targetPhone, merchantSmsText
     });
     this.ensureActiveRun(signal);
+
+    // Update venue memory with outcome and broadcast
+    const updatedMemory = updateVenueMemory(targetName, merchantResponse);
+    this.broadcast("venue_memory_updated", {
+      venueName:        targetName,
+      memory:           updatedMemory,
+      newSkillLearned:  updatedMemory.notes.slice(-1)[0] || null,
+    });
+
+    // Create a skill if a new negotiation pattern was learned
+    if (updatedMemory.escalationRules.length > 0 && updatedMemory.callCount >= 2) {
+      this.upsertSkill({
+        id:               this.nextId("skill"),
+        title:            `${targetName} negotiation pattern`,
+        description:      updatedMemory.escalationRules.slice(-1)[0],
+        source:           `Learned from ${updatedMemory.callCount} calls to ${targetName}`,
+        version:          updatedMemory.callCount,
+        usageCount:       1,
+        createdAt:        nowLabel(),
+        agentId:          "call",
+        scope:            `venue:${targetName.toLowerCase()}`,
+        improvementLabel: `${updatedMemory.successRate}% success rate`,
+      });
+    }
 
     const merchantOffer = {
       id: this.nextId("merchant-offer"),
@@ -1964,5 +2022,94 @@ export class MissionOrchestrator {
     this.updateAgent("planner", { status: "idle", currentTask: "", liveText: "", confidence: 0 });
     await this.safeSendUserSms(`Plan updated. Your request "${command}" has been folded into the live mission.`);
     this.setMissionStatus("completed", mode);
+  }
+
+  async startShadowMission({ missionText, mode = "simulation" }) {
+    if (!missionText?.trim()) throw new Error("missionText is required");
+
+    this.state.shadowPaths = [];
+    this.state.shadowStatus = "running";
+    this.broadcast("shadow_status", { status: "running" });
+
+    const strategies = ["best_value", "fastest", "premium"];
+
+    const paths = await Promise.all(
+      strategies.map(strategy =>
+        this.runShadowPath({ missionText, strategy, mode })
+      )
+    );
+
+    this.state.shadowPaths = paths;
+    this.state.shadowStatus = "ready";
+    this.broadcast("shadow_paths", { paths });
+    this.broadcast("shadow_status", { status: "ready" });
+
+    return { ok: true, paths };
+  }
+
+  async runShadowPath({ missionText, strategy, mode }) {
+    const plannerResult = await runPlannerAgent({ missionText, llm: this.llm });
+    const researchResult = await runResearchAgent({ missionText, llm: this.llm });
+
+    const strategyConfig = {
+      best_value: {
+        label: "Best Value",
+        costMultiplier: 0.85,
+        confidenceBonus: 4,
+        noShowRisk: "low",
+        color: "green",
+        description: "Lowest cost with optimized discounts"
+      },
+      fastest: {
+        label: "Fastest",
+        costMultiplier: 0.95,
+        confidenceBonus: 0,
+        noShowRisk: "medium",
+        color: "amber",
+        description: "Quickest execution, nearest venues"
+      },
+      premium: {
+        label: "Premium",
+        costMultiplier: 1.25,
+        confidenceBonus: 7,
+        noShowRisk: "very low",
+        color: "coral",
+        description: "Highest rated venues, maximum confidence"
+      }
+    };
+
+    const cfg = strategyConfig[strategy];
+    const baseCost = 118.75;
+    const estimatedCost = parseFloat((baseCost * cfg.costMultiplier).toFixed(2));
+    const savings = parseFloat((baseCost - estimatedCost).toFixed(2));
+    const confidence = Math.min(99, 88 + cfg.confidenceBonus);
+
+    return {
+      id: `shadow-${strategy}-${Date.now()}`,
+      strategy,
+      label: cfg.label,
+      color: cfg.color,
+      description: cfg.description,
+      estimatedCost,
+      estimatedCostLabel: `${estimatedCost.toFixed(2)}`,
+      savings: savings > 0 ? savings : 0,
+      savingsLabel: savings > 0 ? `${savings.toFixed(2)} saved` : "No savings",
+      confidence,
+      confidenceLabel: `${confidence}%`,
+      noShowRisk: cfg.noShowRisk,
+      restaurant: {
+        name: researchResult.restaurant.name,
+        time: researchResult.restaurant.reservationTime,
+        rating: researchResult.restaurant.rating
+      },
+      cinema: {
+        name: researchResult.cinema.name,
+        movie: researchResult.cinema.movieTitle,
+        time: researchResult.cinema.showtime
+      },
+      reasoning: plannerResult.reasoning,
+      researchResult,
+      plannerResult
+    };
   }
 }

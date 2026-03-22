@@ -195,6 +195,82 @@ export interface RecommendationInsight {
   fallbackMode: boolean;
 }
 
+export interface VenueCallHistory {
+  timestamp: string;
+  outcome: string;
+  offerText?: string;
+  hour: number;
+  success: boolean;
+}
+
+export interface VenueMemory {
+  venueName: string;
+  key: string;
+  callCount: number;
+  successCount: number;
+  successRate: number | null;
+  preferredTone: "friendly" | "assertive" | "formal" | "persuasive";
+  detectedLanguage: string;
+  lastOutcome: string | null;
+  lastDiscount: string | null;
+  lastPromoCode: string | null;
+  preferredTime: string | null;
+  bestCallHour: number | null;
+  counterPatterns: string[];
+  acceptPatterns: string[];
+  escalationRules: string[];
+  notes: string[];
+  callHistory: VenueCallHistory[];
+  relationshipLevel: "new" | "acquainted" | "regular" | "vip";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface VenueIntelligenceEvent {
+  venueName: string;
+  intelligence: {
+    memory: VenueMemory;
+    script: {
+      language: string;
+      greeting: string;
+      tone: string;
+      opening: string;
+      callCount: number;
+      relationshipLevel: string;
+      suggestedApproach: string;
+      contextNotes: string[];
+    };
+    insights: {
+      isKnown: boolean;
+      recommendedTone: string;
+      recommendedTime: string;
+      successPrediction: string;
+      relationshipSummary: string;
+    };
+  };
+  adaptedTone: string;
+  adaptedLanguage: string;
+  relationshipLevel: string;
+}
+
+export interface ShadowPath {
+  id: string;
+  strategy: "best_value" | "fastest" | "premium";
+  label: string;
+  color: "green" | "amber" | "coral";
+  description: string;
+  estimatedCost: number;
+  estimatedCostLabel: string;
+  savings: number;
+  savingsLabel: string;
+  confidence: number;
+  confidenceLabel: string;
+  noShowRisk: string;
+  restaurant: { name: string; time: string; rating: number };
+  cinema: { name: string; movie: string; time: string };
+  reasoning: string;
+}
+
 export interface MissionState {
   missionStatus: "idle" | "live" | "completed";
   agents: Agent[];
@@ -215,6 +291,13 @@ export interface MissionState {
   autonomyConstraints: AutonomyConstraints;
   pendingApproval: ApprovalRequest | null;
   pendingItineraryConfirmation: PendingItineraryConfirmation | null;
+  shadowPaths: ShadowPath[];
+  shadowStatus: "idle" | "running" | "ready";
+  venueMemories: Record<string, VenueMemory>;
+  activeVenueIntelligence: VenueIntelligenceEvent | null;
+  genomeGeneration: number;
+  genomeSkills: Skill[];
+  omlsStatus: string;
 }
 
 interface MissionContextType extends MissionState {
@@ -243,6 +326,13 @@ interface MissionContextType extends MissionState {
   setPendingItineraryConfirmation: (request: PendingItineraryConfirmation | null) => void;
   hydrateMission: (state: Partial<MissionState>) => void;
   resetMission: () => void;
+  setShadowPaths: (paths: ShadowPath[]) => void;
+  setShadowStatus: (status: "idle" | "running" | "ready") => void;
+  upsertVenueMemory: (venueName: string, memory: VenueMemory) => void;
+  setActiveVenueIntelligence: (payload: VenueIntelligenceEvent | null) => void;
+  setGenomeGeneration: (generation: number) => void;
+  addGenomeSkills: (skills: Skill[]) => void;
+  setOmlsStatus: (status: string) => void;
 }
 
 const personalities: Record<string, AgentPersonality> = {
@@ -301,6 +391,13 @@ export function createInitialMissionState(): MissionState {
     autonomyConstraints: { ...defaultAutonomyConstraints },
     pendingApproval: null,
     pendingItineraryConfirmation: null,
+    shadowPaths: [],
+    shadowStatus: "idle",
+    venueMemories: {},
+    activeVenueIntelligence: null,
+    genomeGeneration: 0,
+    genomeSkills: [],
+    omlsStatus: "idle",
   };
 }
 
@@ -467,12 +564,46 @@ export function MissionProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const upsertVenueMemory = useCallback((venueName: string, memory: VenueMemory) => {
+    setState((s) => ({
+      ...s,
+      venueMemories: { ...s.venueMemories, [venueName.toLowerCase().trim()]: memory },
+    }));
+  }, []);
+
+  const setActiveVenueIntelligence = useCallback((activeVenueIntelligence: VenueIntelligenceEvent | null) => {
+    setState((s) => ({ ...s, activeVenueIntelligence }));
+  }, []);
+
+  const setShadowPaths = useCallback((shadowPaths: ShadowPath[]) => {
+    setState((s) => ({ ...s, shadowPaths }));
+  }, []);
+
+  const setShadowStatus = useCallback((shadowStatus: "idle" | "running" | "ready") => {
+    setState((s) => ({ ...s, shadowStatus }));
+  }, []);
+
   const hydrateMission = useCallback((nextState: Partial<MissionState>) => {
     setState(normalizeMissionState(nextState));
   }, []);
 
   const resetMission = useCallback(() => {
     setState(createInitialMissionState());
+  }, []);
+
+  const setGenomeGeneration = useCallback((genomeGeneration: number) => {
+    setState((s) => ({ ...s, genomeGeneration }));
+  }, []);
+
+  const addGenomeSkills = useCallback((newSkills: Skill[]) => {
+    setState((s) => ({
+      ...s,
+      genomeSkills: [...s.genomeSkills, ...newSkills],
+    }));
+  }, []);
+
+  const setOmlsStatus = useCallback((omlsStatus: string) => {
+    setState((s) => ({ ...s, omlsStatus }));
   }, []);
 
   return (
@@ -484,6 +615,9 @@ export function MissionProvider({ children }: { children: ReactNode }) {
         addSkill, updateSkill, addAdaptation, setTrainingMode,
         setDemoMode, setUserInput, setAutonomyMode, setAutonomyConstraints,
         setPendingApproval, setPendingItineraryConfirmation, hydrateMission, resetMission,
+        setShadowPaths, setShadowStatus,
+        upsertVenueMemory, setActiveVenueIntelligence,
+        setGenomeGeneration, addGenomeSkills, setOmlsStatus,
       }}
     >
       {children}
