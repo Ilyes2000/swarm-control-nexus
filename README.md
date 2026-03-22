@@ -38,6 +38,10 @@ If you need one line for a demo pitch:
 
 > ClawSwarm Nexus is an agentic concierge command center that can actually make the calls, send the texts, and negotiate the plan while the user watches the swarm think in real time.
 
+If you need one line for the technical moat:
+
+> The wow factor is Feature 10: Skill Genome, a MetaClaw-inspired learning loop where every failed mission becomes a reusable skill with measurable lift, turning the swarm into a system that gets provably better over time.
+
 ## Core Features
 
 ### Real-time Mission Control
@@ -83,11 +87,19 @@ If you need one line for a demo pitch:
 - Supports multilingual and venue-adaptive behavior for future live-call strategies
 
 ### Skill Genome / MetaClaw-Inspired Learning Loop (Feature 10)
+Feature 10 is the core technical moat of ClawSwarm Nexus.
+
 - Turns failures and recoveries into reusable skills with measurable lift
 - Organizes learned tactics into generations
 - Shows usage count, category, and observed improvement directly in the UI
 - Supports replay and mission comparison workflows so teams can demonstrate how the swarm improves over time
 - Includes OMLS-style background consolidation hooks for between-mission optimization
+
+Why this matters:
+- most voice agents stay static and repeat the same mistakes forever
+- ClawSwarm converts failures into reusable behavioral upgrades
+- each learned tactic is visible, attributable, and tied to measured improvement
+- that makes the system defensible as infrastructure, not just a polished demo
 
 ### Backend Orchestration Engine
 - Express HTTP API for mission control
@@ -254,7 +266,7 @@ Suggested action:
 
 Suggested narration:
 
-> And finally — the feature that makes ClawSwarm genuinely unique.
+> And finally — the wow factor and technical moat of ClawSwarm Nexus.
 >
 > Most AI systems are static. They make the same mistakes forever. ClawSwarm learns. Every time the agent fails — a counter-offer it couldn't handle, a timeout it didn't recover from — that failure gets analyzed and distilled into a reusable behavioral skill.
 
@@ -273,6 +285,8 @@ If replay is available:
 Close with:
 
 > This is a MetaClaw-inspired learning loop for voice agents. Every failure becomes a skill. Every skill has measurable lift. The swarm gets better with every mission it runs.
+>
+> This is our technical moat: a system that does not just execute missions, but compounds experience into reusable capabilities.
 
 ### [5:00] Closing
 
@@ -280,7 +294,7 @@ Close with:
 >
 > Shadow Mission Twin — choose between parallel futures before committing.
 > Relationship-Aware Voice Negotiation — an agent that remembers every venue it has ever called.
-> Skill Genome — an agent that learns from every failure and gets measurably better over time.
+> Skill Genome — the wow factor and technical moat: an agent that learns from every failure and gets measurably better over time.
 >
 > This isn't just a chatbot demo. It's autonomous infrastructure for real-world concierge execution.
 >
